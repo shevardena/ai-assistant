@@ -51,6 +51,91 @@ class ApiOperationController extends Controller
             ]);
     }
 
+    public function edit(Team $currentTeam, DataSource $dataSource, ApiOperation $apiOperation): Response
+    {
+        Gate::authorize('manageApiOperations', $dataSource);
+        $this->ensureSupportedApi($dataSource);
+        abort_unless($apiOperation->data_source_id === $dataSource->id, 404);
+
+        $apiOperation->load('botApiOperations');
+        $attachment = $apiOperation->botApiOperations
+            ->first(fn ($item): bool => $currentTeam->bots()->whereKey($item->bot_id)->exists());
+
+        return Inertia::render($dataSource->type === 'graphql_api'
+            ? 'data-sources/graphql-operation-create'
+            : 'data-sources/api-operation-create', [
+                'dataSource' => [
+                    'id' => $dataSource->id,
+                    'name' => $dataSource->name,
+                    'config' => $this->safeConfig($dataSource->config),
+                ],
+                'operation' => [
+                    'id' => $apiOperation->id,
+                    'key' => $apiOperation->key,
+                    'name' => $apiOperation->name,
+                    'usage' => $apiOperation->type === 'query' ? 'synced' : ($apiOperation->execution_mode === 'write' ? 'live_write' : 'live_read'),
+                    'method' => $apiOperation->method,
+                    'path' => $apiOperation->path,
+                    'records_path' => data_get($apiOperation->response_mapping, 'records_path', 'root'),
+                    'capability' => $attachment?->tool_name ?? '',
+                    'bot_id' => $attachment?->bot_id,
+                    'headers' => collect($apiOperation->headers ?? [])->map(fn ($value, $name): array => ['name' => $name, 'value' => $value])->values()->all(),
+                    'query_parameters' => $this->operationParameterRows($apiOperation, 'query'),
+                    'body_parameters' => $this->operationParameterRows($apiOperation, 'body'),
+                    'response_fields' => collect(data_get($apiOperation->response_mapping, 'output', []))->map(fn (array $field, string $name): array => [
+                        'name' => $name,
+                        'path' => (string) ($field['path'] ?? ''),
+                        'required' => (bool) ($field['required'] ?? false),
+                    ])->values()->all(),
+                    'pagination' => data_get($apiOperation->response_mapping, 'pagination', ['type' => 'none']),
+                    'timeout_ms' => $apiOperation->timeout_ms,
+                    'is_enabled' => $apiOperation->is_enabled,
+                    'input_mapping' => collect($attachment?->settings['input_mapping'] ?? [])->map(fn (array $mapping, string $modelInput): array => [
+                        'model_input' => $modelInput,
+                        'source' => $mapping['source'] ?? 'model_input',
+                        'dataset_field' => $mapping['dataset_field'] ?? '',
+                        'context_key' => $mapping['context_key'] ?? '',
+                        'operation_argument' => $mapping['operation_argument'] ?? $modelInput,
+                    ])->values()->all(),
+                ],
+                'templateContext' => null,
+            ]);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function operationParameterRows(ApiOperation $operation, string $section): array
+    {
+        $mapping = (array) data_get($operation->request_mapping, $section, []);
+        $fixed = (array) data_get($operation->request_mapping, 'fixed.'.$section, []);
+        $properties = (array) data_get($operation->request_schema, 'properties', []);
+        $required = (array) data_get($operation->request_schema, 'required', []);
+        $rows = [];
+
+        foreach ($mapping as $argument => $name) {
+            $rows[] = [
+                'name' => (string) $name,
+                'source' => 'tool_argument',
+                'argument' => (string) $argument,
+                'value' => '',
+                'required' => in_array($argument, $required, true),
+                'type' => data_get($properties, $argument.'.type', 'string'),
+            ];
+        }
+
+        foreach ($fixed as $name => $value) {
+            $rows[] = [
+                'name' => (string) $name,
+                'source' => 'fixed',
+                'argument' => '',
+                'value' => is_scalar($value) ? (string) $value : '',
+                'required' => false,
+                'type' => is_int($value) ? 'integer' : (is_float($value) ? 'number' : 'string'),
+            ];
+        }
+
+        return $rows;
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -106,6 +191,7 @@ class ApiOperationController extends Controller
         $values = $this->operationValues($dataSource, $request->validated());
         $this->validateCapability($request->validated(), $values['execution_mode']);
         $apiOperation->update($values);
+        $this->attachCapability($request, $currentTeam, $apiOperation);
         $this->syncScheduleForOperation($apiOperation);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('API operation updated.')]);
@@ -296,6 +382,10 @@ class ApiOperationController extends Controller
         $botId = $request->integer('bot');
 
         if ($capability === '' || $botId < 1) {
+            $operation->botApiOperations()
+                ->whereRelation('bot', 'team_id', $team->id)
+                ->delete();
+
             return;
         }
 

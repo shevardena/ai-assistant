@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\ApiOperation;
+use App\Models\Bot;
+use App\Models\BotApiOperation;
 use App\Models\DataSource;
 use App\Models\DataSourceCredential;
 use App\Models\Team;
@@ -236,4 +239,81 @@ test('saving an API operation redirects back to the Inertia data source page', f
         ]));
 
     expect($source->apiOperations()->where('key', 'list-products')->exists())->toBeTrue();
+});
+
+test('an existing API operation opens in the edit form and updates without creating a duplicate', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $source = DataSource::factory()->create([
+        'team_id' => $team->id,
+        'type' => 'rest_api',
+        'config' => ['base_url' => 'https://api.example.test'],
+    ]);
+    $bot = Bot::factory()->create(['team_id' => $team->id]);
+    $operation = ApiOperation::factory()->create([
+        'data_source_id' => $source->id,
+        'key' => 'find-products',
+        'name' => 'Find products',
+        'path' => '/products',
+        'request_schema' => [
+            'type' => 'object',
+            'properties' => ['per_page' => ['type' => 'integer']],
+            'required' => [],
+        ],
+        'request_mapping' => [
+            'query' => ['per_page' => 'per_page'],
+            'fixed' => ['query' => []],
+        ],
+        'response_mapping' => [
+            'output' => [
+                'id' => ['path' => 'id', 'required' => true],
+            ],
+            'pagination' => ['type' => 'none'],
+        ],
+    ]);
+    BotApiOperation::factory()->create([
+        'bot_id' => $bot->id,
+        'api_operation_id' => $operation->id,
+        'tool_name' => 'search_catalog',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('data-sources.api-operations.edit', [
+            'current_team' => $team->slug,
+            'data_source' => $source,
+            'api_operation' => $operation,
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('data-sources/api-operation-create')
+            ->where('operation.id', $operation->id)
+            ->where('operation.key', 'find-products')
+            ->where('operation.query_parameters.0.name', 'per_page')
+            ->where('operation.capability', 'search_catalog'),
+        );
+
+    $this->actingAs($user)
+        ->put(route('data-sources.api-operations.update', [
+            'current_team' => $team->slug,
+            'data_source' => $source,
+            'api_operation' => $operation,
+        ]), [
+            'key' => 'find-products',
+            'name' => 'Find products live',
+            'usage' => 'live_read',
+            'method' => 'GET',
+            'path' => '/products',
+            'capability' => 'search_catalog',
+            'bot' => $bot->id,
+            'query_parameters' => [['name' => 'per_page', 'source' => 'fixed', 'value' => '20', 'type' => 'integer']],
+            'response_fields' => [['name' => 'id', 'path' => 'id', 'required' => true]],
+            'pagination' => ['type' => 'none'],
+        ])
+        ->assertRedirect(route('data-sources.show', [
+            'current_team' => $team->slug,
+            'data_source' => $source,
+        ]));
+
+    expect($source->apiOperations()->count())->toBe(1)
+        ->and($operation->fresh()->name)->toBe('Find products live')
+        ->and($operation->botApiOperations()->firstOrFail()->tool_name)->toBe('search_catalog');
 });

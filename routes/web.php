@@ -372,6 +372,10 @@ Route::prefix('{current_team}')
             ->name('data-sources.api-operations.create')
             ->scopeBindings()
             ->middleware('team.permission:api_operations.manage');
+        Route::get('data-sources/{data_source}/api-operations/{api_operation}/edit', [ApiOperationController::class, 'edit'])
+            ->name('data-sources.api-operations.edit')
+            ->scopeBindings()
+            ->middleware('team.permission:api_operations.manage');
         Route::post('data-sources/{data_source}/api-operations/test', [ApiOperationController::class, 'test'])
             ->name('data-sources.api-operations.test')
             ->scopeBindings()

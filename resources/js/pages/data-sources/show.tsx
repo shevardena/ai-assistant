@@ -26,6 +26,7 @@ import { edit, index } from '@/routes/data-sources';
 import { edit as editApi } from '@/routes/data-sources/api';
 import {
     create as createOperation,
+    edit as editOperation,
     sync as runSync,
 } from '@/routes/data-sources/api-operations';
 import syncActions from '@/routes/data-sources/api-operations/sync';
@@ -480,15 +481,21 @@ export default function DataSourcesShow({ dataSource }: Props) {
                                         <Button asChild>
                                             <Link
                                                 href={
-                                                    createOperation([
-                                                        currentTeam.slug,
-                                                        dataSource.id,
-                                                    ]).url
+                                                    (dataSource.apiOperations ?? []).length > 0
+                                                        ? editOperation([
+                                                              currentTeam.slug,
+                                                              dataSource.id,
+                                                              dataSource.apiOperations[0].id,
+                                                          ]).url
+                                                        : createOperation([
+                                                              currentTeam.slug,
+                                                              dataSource.id,
+                                                          ]).url
                                                 }
                                             >
-                                                {t(
-                                                    'api_builder.operation_title',
-                                                )}
+                                                {(dataSource.apiOperations ?? []).length > 0
+                                                    ? t('common.edit')
+                                                    : t('api_builder.operation_title')}
                                             </Link>
                                         </Button>
                                     </div>
@@ -511,6 +518,15 @@ export default function DataSourcesShow({ dataSource }: Props) {
                                                         {operation.path}
                                                     </p>
                                                 </div>
+                                                <Button variant="outline" size="sm" asChild>
+                                                    <Link href={editOperation([
+                                                        currentTeam.slug,
+                                                        dataSource.id,
+                                                        operation.id,
+                                                    ]).url}>
+                                                        {t('common.edit')}
+                                                    </Link>
+                                                </Button>
                                                 <Badge variant="secondary">
                                                     {operation.executionMode ===
                                                     'write'

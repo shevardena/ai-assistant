@@ -15,7 +15,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { create, store, test } from '@/routes/data-sources/api-operations';
+import { create, store, test, update } from '@/routes/data-sources/api-operations';
+import { show as showDataSource } from '@/routes/data-sources';
 
 type Props = {
     dataSource: { id: number; name: string; config: Record<string, unknown> };
@@ -24,6 +25,25 @@ type Props = {
         capability?: string;
         botId?: number | null;
     } | null;
+    operation?: {
+        id: number;
+        bot_id?: number | null;
+        key: string;
+        name: string;
+        usage: string;
+        method: string;
+        path: string;
+        records_path: string;
+        capability: string;
+        headers: KeyValueRow[];
+        query_parameters: ParameterRow[];
+        body_parameters: ParameterRow[];
+        response_fields: ResponseField[];
+        pagination: Record<string, unknown>;
+        timeout_ms: number;
+        is_enabled: boolean;
+        input_mapping: InputMappingRow[];
+    };
 };
 
 type ParameterRow = {
@@ -79,30 +99,31 @@ const emptyKeyValue = (): KeyValueRow => ({ name: '', value: '' });
 export default function ApiOperationCreate({
     dataSource,
     templateContext,
+    operation,
 }: Props) {
     const { t } = useTranslation();
     const { currentTeam } = usePage().props;
     const form = useForm({
-        key: '',
-        name: '',
-        usage: 'live_read',
-        method: 'GET',
-        path: '/',
-        records_path: 'root',
-        capability: templateContext?.capability ?? '',
-        headers: [] as KeyValueRow[],
-        query_parameters: [] as ParameterRow[],
-        body_parameters: [] as ParameterRow[],
-        response_fields: [
+        key: operation?.key ?? '',
+        name: operation?.name ?? '',
+        usage: operation?.usage ?? 'live_read',
+        method: operation?.method ?? 'GET',
+        path: operation?.path ?? '/',
+        records_path: operation?.records_path ?? 'root',
+        capability: operation?.capability ?? templateContext?.capability ?? '',
+        headers: operation?.headers ?? ([] as KeyValueRow[]),
+        query_parameters: operation?.query_parameters ?? ([] as ParameterRow[]),
+        body_parameters: operation?.body_parameters ?? ([] as ParameterRow[]),
+        response_fields: operation?.response_fields ?? [
             { name: 'status', path: 'status', required: true },
         ] as ResponseField[],
         response_mapping: {},
-        pagination: { type: 'none' },
-        timeout_ms: 10000,
-        is_enabled: true,
+        pagination: operation?.pagination ?? { type: 'none' },
+        timeout_ms: operation?.timeout_ms ?? 10000,
+        is_enabled: operation?.is_enabled ?? true,
         test_arguments: {},
-        bot: templateContext?.botId ?? '',
-        input_mapping: [] as InputMappingRow[],
+        bot: operation?.bot_id ?? templateContext?.botId ?? '',
+        input_mapping: operation?.input_mapping ?? ([] as InputMappingRow[]),
     });
     const [preview, setPreview] = useState<Record<string, unknown> | null>(
         null,
@@ -212,7 +233,17 @@ export default function ApiOperationCreate({
                 <div className="flex items-start gap-3">
                     <Button variant="ghost" size="icon" asChild>
                         <Link
-                            href={create.url([currentTeamSlug, dataSource.id])}
+                            href={
+                                operation
+                                    ? showDataSource([
+                                          currentTeamSlug,
+                                          dataSource.id,
+                                      ]).url
+                                    : create.url([
+                                          currentTeamSlug,
+                                          dataSource.id,
+                                      ])
+                            }
                             aria-label={t('common.back')}
                         >
                             <ArrowLeft />
@@ -227,7 +258,13 @@ export default function ApiOperationCreate({
                 <form
                     onSubmit={(event) => {
                         event.preventDefault();
-                        form.post(store.url([currentTeamSlug, dataSource.id]));
+                        operation
+                            ? form.put(update.url([
+                                  currentTeamSlug,
+                                  dataSource.id,
+                                  operation.id,
+                              ]))
+                            : form.post(store.url([currentTeamSlug, dataSource.id]));
                     }}
                     className="space-y-6"
                 >
