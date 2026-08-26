@@ -1,0 +1,963 @@
+{
+    "common": {
+        "graphql_api": "GraphQL API",
+        "language": "Język",
+        "save": "Zapisz",
+        "saving": "Zapisywanie...",
+        "cancel": "Anuluj",
+        "delete": "Usuń",
+        "deleting": "Usuwanie...",
+        "edit": "Edytuj",
+        "create": "Utwórz",
+        "close": "Zamknij",
+        "confirm": "Potwierdź",
+        "search": "Szukaj",
+        "filter": "Filtruj",
+        "reset": "Resetuj",
+        "loading": "Ładowanie",
+        "retry": "Spróbuj ponownie",
+        "back": "Wstecz",
+        "next": "Dalej",
+        "previous": "Wstecz",
+        "actions": "Akcje",
+        "status": "Status",
+        "name": "Nazwa",
+        "description": "Opis",
+        "email": "E-mail",
+        "customer": "Klient",
+        "customer_profile": "Profil klienta",
+        "company": "Firma",
+        "owner": "Właściciel",
+        "tags": "Tagi",
+        "notes": "Notatki",
+        "activity": "Aktywność",
+        "add_customer": "Dodaj klienta",
+        "edit_customer": "Edytuj klienta",
+        "no_customer_linked": "Brak połączonego klienta",
+        "linked_customer": "Połączony klient",
+        "team": "Zespół",
+        "settings": "Ustawienia",
+        "profile": "Profil",
+        "security": "Bezpieczeństwo",
+        "appearance": "Wygląd",
+        "teams": "Zespoły",
+        "log_out": "Wyloguj się",
+        "select_team": "Wybierz zespół",
+        "new_team": "Nowy zespół",
+        "repository": "Repozytorium",
+        "documentation": "Dokumentacja",
+        "light": "Jasny",
+        "dark": "Ciemny",
+        "system": "Systemowy",
+        "yes": "Tak",
+        "no": "Nie",
+        "apply": "Zastosuj",
+        "update": "Aktualizuj",
+        "upload": "Prześlij",
+        "import": "Import",
+        "run": "Uruchom",
+        "view": "Wyświetl",
+        "all": "Wszystkie",
+        "none": "Brak",
+        "type": "Typ",
+        "url": "URL",
+        "token": "Token",
+        "secret": "Sekret",
+        "username": "Nazwa użytkownika",
+        "password": "Hasło",
+        "updated": "Zaktualizowano",
+        "created": "Utworzono",
+        "platform": "Platforma",
+        "page": "Strona",
+        "showing_of": "Wyświetlono {{from}}–{{to}} z {{total}}",
+        "show_password": "Pokaż hasło",
+        "hide_password": "Ukryj hasło",
+        "create_bot": "Utwórz bota",
+        "manage_team_bots": "Zarządzaj asystentami należącymi do bieżącego zespołu.",
+        "manage_team_sources": "Zarządzaj źródłami należącymi do bieżącego zespołu.",
+        "rest_api": "REST API",
+        "uploaded_file": "Przesłany plik",
+        "define_team_collections": "Definiuj kolekcje z możliwością wyszukiwania dla bieżącego zespołu.",
+        "use_template": "Użyj szablonu",
+        "create_data_source": "Utwórz źródło danych",
+        "create_dataset": "Utwórz zbiór danych",
+        "create_workflow": "Utwórz workflow",
+        "no_bots": "Nie ma jeszcze botów",
+        "no_data_sources": "Nie ma jeszcze źródeł danych",
+        "no_datasets": "Nie ma jeszcze zbiorów danych",
+        "no_workflows": "Nie ma jeszcze workflowów",
+        "no_appointments": "Nie znaleziono wizyt",
+        "upcoming": "Nadchodzące",
+        "review_appointments": "Przeglądaj potwierdzone wizyty utworzone przez Twoje boty.",
+        "confirmed_bookings_empty": "Potwierdzone wizyty klientów pojawią się tutaj.",
+        "no_email": "Nie podano adresu e-mail",
+        "filter_by_bot": "Filtruj według bota",
+        "filter_by_status": "Filtruj według statusu",
+        "filter_by_data_source": "Filtruj według źródła danych",
+        "filter_by_health": "Filtruj według stanu",
+        "previous_page": "Poprzednia",
+        "next_page": "Następna",
+        "pagination": "Paginacja",
+        "back_to": "Wróć do: {{resource}}",
+        "overview": "Przegląd",
+        "details": "Szczegóły",
+        "source_files": "Pliki źródłowe",
+        "recent_runs": "Ostatnie uruchomienia",
+        "recent_failures": "Ostatnie błędy",
+        "import_history": "Historia importu",
+        "data_source": "Źródło danych",
+        "dataset": "Zbiór danych",
+        "bot": "Bot",
+        "appointment": "Wizyta",
+        "starts": "Początek",
+        "all_bots": "Wszystkie boty",
+        "all_data_sources": "Wszystkie źródła danych",
+        "all_statuses": "Wszystkie statusy",
+        "no_show": "Nieobecność",
+        "scheduled": "Zaplanowane",
+        "today": "Dzisiaj",
+        "last_7_days": "Ostatnie 7 dni",
+        "last_30_days": "Ostatnie 30 dni",
+        "last_90_days": "Ostatnie 90 dni",
+        "all_time": "Cały czas",
+        "set_up_first_assistant": "Skonfiguruj pierwszego asystenta AI",
+        "set_up_another_assistant": "Skonfiguruj kolejnego asystenta",
+        "setup_description": "Zacznij od szablonu biznesowego lub zbuduj bota od podstaw.",
+        "start_setup": "Rozpocznij konfigurację",
+        "close_sidebar": "Zamknij pasek boczny",
+        "toggle_sidebar": "Przełącz pasek boczny",
+        "more": "Więcej",
+        "select_option": "Wybierz opcję",
+        "select_data_source": "Wybierz źródło danych",
+        "select_source_type": "Wybierz typ źródła",
+        "optional": "Opcjonalne",
+        "remove": "Usuń",
+        "warning_title": "Ostrzeżenie",
+        "are_you_sure": "Czy na pewno?",
+        "invite_member": "Zaproś członka zespołu",
+        "email_address": "Adres e-mail",
+        "full_name": "Imię i nazwisko",
+        "role": "Rola",
+        "select_role": "Wybierz rolę",
+        "team_name": "Nazwa zespołu",
+        "team_members": "Członkowie zespołu",
+        "view_team": "Wyświetl zespół",
+        "leave_team": "Opuść zespół",
+        "cancel_invitation": "Anuluj zaproszenie",
+        "delete_question": "Usunąć {{resource}}?",
+        "unread": "Nieprzeczytane",
+        "total": "Łącznie",
+        "all_notifications": "Wszystkie",
+        "mark_all_read": "Oznacz wszystkie jako przeczytane",
+        "mark_read": "Oznacz jako przeczytane",
+        "mark_unread": "Oznacz jako nieprzeczytane",
+        "caught_up": "To już wszystkie powiadomienia.",
+        "no_notifications": "Nie ma jeszcze powiadomień",
+        "activity_description": "Ważna aktywność botów i integracji pojawi się tutaj.",
+        "no_items": "Nie ma jeszcze elementów.",
+        "no_results": "Nie znaleziono wyników.",
+        "conversation_count_one": "{{count}} rozmowa",
+        "conversation_count_few": "{{count}} rozmowy",
+        "conversation_count_many": "{{count}} rozmów",
+        "conversation_count_other": "{{count}} rozmowy",
+        "records": "Records",
+        "add_record": "Add record",
+        "edit_record": "Edit record",
+        "manual": "Manual",
+        "synced": "Synced",
+        "source": "Source",
+        "file_import": "File import",
+        "identifier": "Identifier",
+        "fields": "Fields",
+        "total_records": "total records",
+        "active_records": "active records",
+        "search_records": "Search by identifier or mapped value...",
+        "source_managed": "This record is managed by an external source.",
+        "overwrite_warning": "Changes may be overwritten during the next sync.",
+        "deactivate": "Deactivate",
+        "activate": "Activate",
+        "source_updated": "Source updated",
+        "raw_data": "Raw normalized data",
+        "no_records": "No records found.",
+        "delete_confirm": "Delete this manual record?"
+    },
+    "navigation": {
+        "home": "Strona główna",
+        "ai_assistant": "Asystent AI",
+        "inbox_customers": "Skrzynka odbiorcza i klienci",
+        "insights_health": "Statystyki i stan",
+        "account": "Konto",
+        "dashboard": "Panel główny",
+        "bots": "Boty",
+        "data_sources": "Źródła danych",
+        "datasets": "Zbiory danych",
+        "billing": "Rozliczenia",
+        "analytics": "Analityka",
+        "conversations": "Rozmowy",
+        "customers": "Klienci",
+        "leads": "Leady",
+        "deals": "Transakcje",
+        "tasks": "Zadania",
+        "appointments": "Spotkania",
+        "support_tickets": "Zgłoszenia do pomocy",
+        "workflows": "Przepływy pracy",
+        "notifications": "Powiadomienia",
+        "knowledge_gaps": "Luki w wiedzy",
+        "action_history": "Historia działań",
+        "integration_health": "Stan integracji",
+        "data_health": "Stan danych",
+        "ai_improvements": "Ulepszenia AI",
+        "bot_testing": "Testowanie bota",
+        "channels": "Kanały",
+        "onboarding": "Wprowadzenie"
+    },
+    "settings": {
+        "title": "Ustawienia",
+        "description": "Zarządzaj ustawieniami profilu i konta",
+        "language_description": "Wybierz język panelu głównego.",
+        "save_language": "Zapisz język",
+        "language_saved": "Język zapisany",
+        "profile_settings": "Ustawienia profilu",
+        "security_settings": "Ustawienia bezpieczeństwa",
+        "appearance_settings": "Ustawienia wyglądu",
+        "appearance_description": "Zaktualizuj ustawienia wyglądu swojego konta",
+        "profile_description": "Zaktualizuj imię i adres e-mail",
+        "email_unverified": "Twój adres e-mail nie został zweryfikowany.",
+        "resend_verification": "Kliknij tutaj, aby ponownie wysłać wiadomość weryfikacyjną.",
+        "verification_sent": "Nowa wiadomość z linkiem weryfikacyjnym została wysłana na Twój adres."
+    },
+    "status": {
+        "draft": "Wersja robocza",
+        "ready": "Gotowe",
+        "published": "Opublikowane",
+        "disabled": "Wyłączone",
+        "active": "Aktywne",
+        "inactive": "Nieaktywne",
+        "open": "Otwarte",
+        "pending": "Oczekujące",
+        "resolved": "Rozwiązane",
+        "closed": "Zamknięte",
+        "failed": "Nieudane",
+        "completed": "Ukończone",
+        "processing": "Przetwarzanie",
+        "error": "Błąd",
+        "success": "Sukces",
+        "cancelled": "Anulowane",
+        "syncing": "Synchronizacja",
+        "preparing": "Przygotowywanie",
+        "indexing": "Indeksowanie",
+        "booked": "Zarezerwowano",
+        "confirmed": "Potwierdzono",
+        "new": "Nowe",
+        "contacted": "Skontaktowano",
+        "qualified": "Zakwalifikowane",
+        "converted": "Skonwertowane",
+        "lost": "Utracone",
+        "ignored": "Ignorowane",
+        "healthy": "Działa prawidłowo",
+        "warning": "Ostrzeżenie"
+    },
+    "billing": {
+        "title": "Rozliczenia",
+        "create_workspace": "Utwórz nową przestrzeń roboczą",
+        "workspace_name": "Nazwa przestrzeni roboczej",
+        "select_plan": "Wybierz plan",
+        "continue_to_payment": "Przejdź do płatności",
+        "workspace_activation_pending": "Aktywacja przestrzeni oczekuje na potwierdzenie",
+        "workspace_created": "Przestrzeń robocza utworzona",
+        "payment_not_completed": "Płatność nie została ukończona",
+        "refresh_status": "Odśwież status",
+        "try_payment_again": "Spróbuj zapłacić ponownie",
+        "current_plan": "Obecny plan",
+        "usage": "Wykorzystanie",
+        "manage_subscription": "Zarządzaj subskrypcją",
+        "upgrade": "Zwiększ plan",
+        "downgrade": "Zmniejsz plan",
+        "cancel_subscription": "Anuluj subskrypcję",
+        "resume_subscription": "Wznów subskrypcję",
+        "renews_on": "Odnawia się",
+        "cancels_on": "Kończy się",
+        "payment_failed": "Płatność nie powiodła się",
+        "description": "Przeglądaj plan zespołu, uprawnienia i bieżące wykorzystanie.",
+        "provider_payments": "Płatności zarządzane przez dostawcę",
+        "stripe_available": "Rozliczenia Stripe są dostępne",
+        "billing_unavailable": "Rozliczenia nie są skonfigurowane",
+        "team_members": "Członkowie zespołu",
+        "customer_conversations": "Rozmowy z klientami",
+        "production_actions": "Działania produkcyjne",
+        "unlimited": "Bez limitu",
+        "choose_plan": "Wybierz plan",
+        "change_plan": "Zmień plan",
+        "limit_reached": "Osiągnięto limit",
+        "approaching_limit": "Zbliżasz się do limitu",
+        "within_plan": "W ramach planu",
+        "unlimited_for_plan": "Bez limitu dla tego planu.",
+        "period_limit": "{{percentage}}% limitu bieżącego okresu.",
+        "plan_comparison": "Porównanie planów",
+        "plan_registry_note": "Limity i funkcje planów pochodzą z rejestru serwera. Ceny Stripe są ustalane po stronie serwera.",
+        "manage_billing": "Zarządzaj rozliczeniami",
+        "cancel_at_period_end": "Anuluj na koniec okresu",
+        "usage_label": "Wykorzystanie — {{period}}"
+    },
+    "dashboard": {
+        "good_morning": "Dzień dobry",
+        "good_afternoon": "Dzień dobry",
+        "good_evening": "Dobry wieczór",
+        "attention_description": "Oto co wymaga dziś uwagi.",
+        "setup_title": "Przygotuj asystenta",
+        "metrics": {
+            "conversations": "Rozmowy",
+            "leads": "Leady",
+            "successful_actions": "Udane działania",
+            "handoffs": "Przekazania do człowieka"
+        },
+        "no_comparison": "Brak porównania",
+        "vs_previous": "względem poprzedniego okresu",
+        "needs_attention": "Wymaga uwagi",
+        "everything_good": "Wszystko wygląda dobrze.",
+        "attention": {
+            "handoffs": "Oczekujące przekazania",
+            "failed_actions": "Nieudane działania",
+            "failed_imports": "Nieudane importy",
+            "unassigned": "Nieprzypisane otwarte rozmowy",
+            "integration_failures": "Błędy integracji"
+        },
+        "system_health": "Stan systemu",
+        "health": {
+            "bots": "Boty",
+            "data": "Dane",
+            "integrations": "Integracje",
+            "channels": "Kanały"
+        },
+        "conversation_activity": "Aktywność rozmów",
+        "recent_conversations": "Ostatnie rozmowy",
+        "no_conversations": "Brak produkcyjnych rozmów w tym okresie.",
+        "ai_improvements": "Możliwości poprawy AI",
+        "no_improvements": "Brak możliwości poprawy.",
+        "improvement_opportunity": "Sprawdź tę możliwość poprawy.",
+        "view_improvements": "Zobacz poprawę AI",
+        "business_outcomes": "Wyniki biznesowe",
+        "outcomes": {
+            "leads": "Pozyskane leady",
+            "appointments": "Umówione spotkania",
+            "tickets": "Bilety wsparcia",
+            "completed_actions": "Ukończone działania"
+        },
+        "workspace_summary": "Podsumowanie przestrzeni",
+        "notifications": "Nieprzeczytane powiadomienia",
+        "billing_usage": "Wykorzystanie planu",
+        "quick_actions": "Szybkie działania",
+        "actions": {
+            "create_bot": "Utwórz bota",
+            "add_data_source": "Dodaj źródło danych",
+            "run_bot_test": "Uruchom test bota",
+            "configure_channel": "Skonfiguruj kanał",
+            "open_inbox": "Otwórz skrzynkę"
+        },
+        "steps": {
+            "bot": "Utwórz pierwszego bota",
+            "data": "Połącz dane",
+            "capabilities": "Skonfiguruj możliwości",
+            "tests": "Uruchom test bota",
+            "design": "Dostosuj wygląd",
+            "domain": "Dodaj domenę strony",
+            "embed": "Przygotuj widget"
+        }
+    },
+    "templates": {
+        "setup": {
+            "title": "Setup",
+            "index_description": "Choose a business starting point. Review what the assistant needs before creating a draft.",
+            "overview": "Setup overview",
+            "overview_description": "Each item explains whether information should be synced, fetched live, or connected as an action.",
+            "why": "Why it matters",
+            "create_title": "Create an assistant draft",
+            "create_description": "Applying a template creates a draft Bot and opens this actionable setup plan.",
+            "safe_scaffolding": "Safe setup scaffolding",
+            "safe_scaffolding_description": "No sample records, credentials, API operations, channels, or workflows are created automatically.",
+            "bot_name": "Assistant name",
+            "channels": "Channels",
+            "channels_description": "Connect only the channels you want to launch.",
+            "suggested_fields": "Suggested fields",
+            "launch_readiness": "Launch readiness",
+            "progress_summary": "{{completed}} of {{total}} required items ready",
+            "optional_does_not_block": "Recommended and optional items improve the assistant but do not block launch readiness.",
+            "custom_description": "Custom Bots are not forced into a business template. Configure the resources that fit your use case.",
+            "automation_description": "These are recommendations only. Review and create workflows when you are ready.",
+            "no_recommendations": "No recommendations for this template.",
+            "testing_title": "Testing and launch",
+            "testing_description": "Use these suggested questions as a starting point for saved Bot tests.",
+            "safety_note": "Template guidance is trusted metadata. It never fabricates records, credentials, integrations, workflows, or external availability.",
+            "steps": {
+                "data": {
+                    "title": "Connect data and knowledge",
+                    "description": "Add the synced knowledge and catalog sources your assistant should use."
+                },
+                "capabilities": {
+                    "title": "Configure live capabilities",
+                    "description": "Review the live reads and writes that need real API operations."
+                },
+                "tests": {
+                    "title": "Run a Bot test",
+                    "description": "Try representative customer questions before publishing."
+                },
+                "design": {
+                    "title": "Customize appearance",
+                    "description": "Adjust the widget and product cards for your brand."
+                },
+                "domain": {
+                    "title": "Add a website domain",
+                    "description": "Allow the domains where the assistant will be embedded."
+                },
+                "embed": {
+                    "title": "Prepare the widget",
+                    "description": "Use the embed code after the Bot and domain are ready."
+                }
+            }
+        },
+        "actions": {
+            "all_templates": "All templates",
+            "start_from_scratch": "Start from scratch",
+            "review_setup": "Review setup",
+            "create_dataset": "Create dataset",
+            "connect_data_source": "Connect source",
+            "configure_mapping": "Configure mapping",
+            "configure_live_api": "Configure live API",
+            "configure_write_api": "Configure write API",
+            "configure_channel": "Configure channel",
+            "open_capabilities": "Open capabilities",
+            "open_workflows": "Review workflows",
+            "run_bot_test": "Run Bot test",
+            "open_design": "Customize design",
+            "open_bot": "Open Bot",
+            "not_available": "Not available yet",
+            "creating": "Creating draft…",
+            "use_template": "Use this template"
+        },
+        "card": {
+            "supported_capabilities": "supported capabilities",
+            "core_setup": "Core setup requirements"
+        },
+        "importance": {
+            "required": "Required",
+            "recommended": "Recommended",
+            "optional": "Optional"
+        },
+        "data_modes": {
+            "synced": "Synced data",
+            "live": "Live API",
+            "hybrid": "Hybrid"
+        },
+        "support": {
+            "future_custom": "Future/custom integration",
+            "not_available_yet": "Not available yet"
+        },
+        "status": {
+            "not_configured": "Not configured",
+            "partially_configured": "Partially configured",
+            "ready": "Ready",
+            "unavailable": "Unavailable",
+            "dataset_not_connected": "No compatible dataset is attached.",
+            "dataset_needs_configuration": "The attached dataset is not ready yet.",
+            "capability_not_ready": "The required capability is not ready.",
+            "api_not_configured": "A matching API operation is not configured.",
+            "channel_not_configured": "This channel is not connected yet.",
+            "connected": "Connected and ready.",
+            "workflow_not_configured": "Review and create this workflow when ready.",
+            "future_custom": "This needs a future or custom integration."
+        },
+        "categories": {
+            "data_knowledge": "Data and knowledge",
+            "data_knowledge_description": "Synced sources for searchable information and business knowledge.",
+            "live_integrations": "Live integrations",
+            "live_integrations_description": "Fetch changing business data on demand instead of importing operational history.",
+            "actions": "Actions",
+            "actions_description": "Write operations change business state and must use a configured API.",
+            "automation": "Automation",
+            "automation_description": "Workflow recommendations are optional and are never created automatically.",
+            "channels": "Channels",
+            "channels_description": "Communication channels where customers can reach the assistant."
+        },
+        "requirement_copy": {
+            "knowledge": {
+                "description": "Synced knowledge that gives the assistant reliable business context.",
+                "why": "Keep relatively stable information searchable without requiring a live request."
+            },
+            "catalog": {
+                "description": "A searchable structured catalog with the fields needed for discovery and details.",
+                "why": "Keep the searchable base local while volatile fields can remain live."
+            },
+            "live_read": {
+                "description": "A read-only API operation that fetches changing information on demand.",
+                "why": "Avoid importing sensitive or fast-changing operational history."
+            },
+            "live_write": {
+                "description": "A write API operation that performs an external business action.",
+                "why": "Keep external changes behind an authorized operation and existing confirmation safety."
+            },
+            "workflow": {
+                "description": "A recommended internal automation for the team to review.",
+                "why": "Turn important customer events into consistent team follow-up."
+            },
+            "channel": {
+                "description": "A recommended customer communication channel.",
+                "why": "Give customers a clear way to reach the assistant."
+            }
+        },
+        "capabilities": {
+            "search_catalog": "Search catalog",
+            "get_product_details": "Product details",
+            "recommend_products": "Product recommendations",
+            "compare_products": "Compare products",
+            "lookup_faq": "FAQ and knowledge answers",
+            "check_stock": "Check stock",
+            "check_order_status": "Check order status",
+            "track_order": "Track order",
+            "get_shipping_info": "Get shipping information",
+            "add_to_cart": "Add to cart",
+            "capture_lead": "Capture lead",
+            "create_support_ticket": "Create support ticket",
+            "book_appointment": "Book appointment",
+            "get_store_locations": "Find locations",
+            "request_human_handoff": "Request human handoff"
+        },
+        "outcomes": {
+            "product_discovery": "Help customers discover products.",
+            "product_details": "Answer product detail questions.",
+            "recommendations": "Recommend relevant options.",
+            "comparison": "Compare products or listings.",
+            "policy_answers": "Answer policy and FAQ questions.",
+            "stock_checking": "Check current stock when connected.",
+            "order_tracking": "Check orders and shipment tracking.",
+            "cart_actions": "Support cart actions through an API.",
+            "lead_capture": "Capture purchase intent and support requests.",
+            "vehicle_discovery": "Help shoppers discover vehicles.",
+            "vehicle_comparison": "Compare vehicle options.",
+            "inventory_availability": "Check inventory availability.",
+            "test_drive_requests": "Collect test-drive requests.",
+            "lead_qualification": "Qualify sales leads.",
+            "trade_in_inquiry": "Collect trade-in inquiries for follow-up.",
+            "finance_faq": "Answer finance and ownership questions.",
+            "locations": "Share branch and service locations.",
+            "property_discovery": "Help people discover properties.",
+            "property_comparison": "Compare property options.",
+            "buyer_qualification": "Collect buyer or renter preferences.",
+            "viewing_requests": "Collect viewing requests.",
+            "office_information": "Share office information.",
+            "room_discovery": "Help guests explore room types.",
+            "hotel_information": "Answer hotel and amenity questions.",
+            "policies": "Answer guest policy questions.",
+            "availability": "Check availability when connected.",
+            "rates": "Show live rates when connected.",
+            "reservation_support": "Guide reservation requests and support.",
+            "service_information": "Share general clinic service information.",
+            "hours_locations": "Share hours and locations.",
+            "insurance_information": "Answer general insurance and billing questions.",
+            "preparation_information": "Share general preparation instructions.",
+            "appointment_booking": "Help guests request appointments.",
+            "support_escalation": "Escalate administrative support needs.",
+            "menu_discovery": "Help guests discover menu items.",
+            "menu_questions": "Answer general menu questions.",
+            "dietary_information": "Share provided dietary information.",
+            "restaurant_policies": "Answer restaurant policy questions.",
+            "reservation_requests": "Guide reservation requests.",
+            "documentation_search": "Search product documentation.",
+            "faq": "Answer frequently asked questions.",
+            "troubleshooting": "Guide documented troubleshooting.",
+            "support_tickets": "Create support tickets through an API.",
+            "human_escalation": "Escalate complex requests to a person.",
+            "service_status": "Share status information when connected."
+        },
+        "ecommerce": {
+            "name": "E-commerce",
+            "description": "A practical assistant for product discovery, support, and connected commerce actions.",
+            "best_for": "Online stores, catalogs, customer questions, and live commerce APIs."
+        },
+        "car_dealership": {
+            "name": "Car dealership",
+            "description": "A vehicle assistant for inventory discovery, comparisons, and sales follow-up.",
+            "best_for": "Dealership inventory, test drives, FAQs, and sales leads."
+        },
+        "real_estate": {
+            "name": "Real estate",
+            "description": "A property assistant for discovery, qualification, and viewing requests.",
+            "best_for": "Property listings, buyer or renter questions, and office follow-up."
+        },
+        "hotel": {
+            "name": "Hotel",
+            "description": "A guest assistant for room information, policies, and connected availability.",
+            "best_for": "Room types, hotel information, guest support, and future reservation integrations."
+        },
+        "clinic": {
+            "name": "Clinic",
+            "description": "An administrative clinic assistant for services, general information, and appointments.",
+            "best_for": "Non-diagnostic patient information, locations, and appointment requests."
+        },
+        "restaurant": {
+            "name": "Restaurant",
+            "description": "A restaurant assistant for menu discovery, general questions, and locations.",
+            "best_for": "Menus, restaurant policies, locations, and future reservation integrations."
+        },
+        "saas_support": {
+            "name": "SaaS / Support",
+            "description": "A support assistant for documentation, troubleshooting, tickets, and escalation.",
+            "best_for": "Help centers, product documentation, support teams, and customer self-service."
+        },
+        "custom": {
+            "name": "Custom setup",
+            "description": "Configure this Bot using the resources that fit your business.",
+            "best_for": "Teams starting from scratch or customizing an existing Bot."
+        },
+        "requirements": {
+            "products": {
+                "title": "Products"
+            },
+            "policies": {
+                "title": "Policies"
+            },
+            "inventory": {
+                "title": "Inventory"
+            },
+            "orders": {
+                "title": "Orders"
+            },
+            "tracking": {
+                "title": "Tracking"
+            },
+            "shipping": {
+                "title": "Shipping"
+            },
+            "cart": {
+                "title": "Cart"
+            },
+            "lead_capture": {
+                "title": "Lead Capture"
+            },
+            "support_ticket": {
+                "title": "Support Ticket"
+            },
+            "lead_notification": {
+                "title": "Lead Notification"
+            },
+            "support_notification": {
+                "title": "Support Notification"
+            },
+            "handoff_notification": {
+                "title": "Handoff Notification"
+            },
+            "website": {
+                "title": "Website"
+            },
+            "whatsapp": {
+                "title": "Whatsapp"
+            },
+            "vehicles": {
+                "title": "Vehicles"
+            },
+            "vehicle_availability": {
+                "title": "Vehicle Availability"
+            },
+            "dealership_faq": {
+                "title": "Dealership Faq"
+            },
+            "locations": {
+                "title": "Locations"
+            },
+            "test_drive": {
+                "title": "Test Drive"
+            },
+            "test_drive_notification": {
+                "title": "Test Drive Notification"
+            },
+            "trade_in": {
+                "title": "Trade In"
+            },
+            "properties": {
+                "title": "Properties"
+            },
+            "listing_status": {
+                "title": "Listing Status"
+            },
+            "real_estate_faq": {
+                "title": "Real Estate Faq"
+            },
+            "viewing_booking": {
+                "title": "Viewing Booking"
+            },
+            "viewing_notification": {
+                "title": "Viewing Notification"
+            },
+            "lead_qualification": {
+                "title": "Lead Qualification"
+            },
+            "office_locations": {
+                "title": "Office Locations"
+            },
+            "rooms": {
+                "title": "Rooms"
+            },
+            "hotel_information": {
+                "title": "Hotel Information"
+            },
+            "availability": {
+                "title": "Availability"
+            },
+            "rates": {
+                "title": "Rates"
+            },
+            "reservation": {
+                "title": "Reservation"
+            },
+            "reservation_lookup": {
+                "title": "Reservation Lookup"
+            },
+            "reservation_notification": {
+                "title": "Reservation Notification"
+            },
+            "services": {
+                "title": "Services"
+            },
+            "clinic_faq": {
+                "title": "Clinic Faq"
+            },
+            "clinic_locations": {
+                "title": "Clinic Locations"
+            },
+            "appointment_slots": {
+                "title": "Appointment Slots"
+            },
+            "appointment_booking": {
+                "title": "Appointment Booking"
+            },
+            "patient_intake": {
+                "title": "Patient Intake"
+            },
+            "appointment_notification": {
+                "title": "Appointment Notification"
+            },
+            "menu": {
+                "title": "Menu"
+            },
+            "restaurant_faq": {
+                "title": "Restaurant Faq"
+            },
+            "restaurant_locations": {
+                "title": "Restaurant Locations"
+            },
+            "table_availability": {
+                "title": "Table Availability"
+            },
+            "table_reservation": {
+                "title": "Table Reservation"
+            },
+            "instagram": {
+                "title": "Instagram"
+            },
+            "help_center": {
+                "title": "Help Center"
+            },
+            "support_faq": {
+                "title": "Support Faq"
+            },
+            "documentation": {
+                "title": "Documentation"
+            },
+            "account_lookup": {
+                "title": "Account Lookup"
+            },
+            "service_status": {
+                "title": "Service Status"
+            },
+            "email": {
+                "title": "Email"
+            }
+        },
+        "tests": {
+            "ecommerce": {
+                "product_search": "Find me a product under $100.",
+                "policy": "What is your return policy?",
+                "stock": "Is this item in stock?"
+            },
+            "car_dealership": {
+                "vehicle_search": "Show me SUVs under my budget.",
+                "test_drive": "I want to request a test drive."
+            },
+            "real_estate": {
+                "property_search": "Find apartments in my preferred area.",
+                "lead": "I want to speak with an agent."
+            },
+            "hotel": {
+                "room_information": "What room types and amenities do you offer?",
+                "policies": "What time is check-in?"
+            },
+            "clinic": {
+                "service_information": "What services do you offer?",
+                "appointment": "I want to request an appointment."
+            },
+            "restaurant": {
+                "menu": "What is on the menu?",
+                "policies": "Are you open today?"
+            },
+            "saas_support": {
+                "documentation": "How do I configure this feature?",
+                "ticket": "I need help from support."
+            }
+        }
+    },
+    "data_source_chooser": {
+        "graphql_title": "Połącz z API GraphQL",
+        "graphql_description": "Pobieraj i synchronizuj dane za pomocą dokumentów GraphQL.",
+        "graphql_help": "Najlepsze dla API korzystających z zapytań i mutacji GraphQL.",
+        "title": "Dodaj źródło danych",
+        "description": "Wybierz, skąd pochodzą dane Twojego zespołu.",
+        "continue": "Kontynuuj",
+        "file_title": "Prześlij plik",
+        "file_description": "CSV, JSON lub XLSX",
+        "file_help": "Najlepsze do ręcznych przesłań i jednorazowych importów.",
+        "api_title": "Połącz REST API",
+        "api_description": "Synchronizuj lub pobieraj dane na żywo",
+        "api_help": "Najlepsze dla połączonych i często zmieniających się systemów.",
+        "advanced": "Konfiguracja zaawansowana",
+        "advanced_help": "Większość użytkowników tego nie potrzebuje. Nieznane starsze ustawienia są bezpiecznie zachowywane.",
+        "invalid_json": "Konfiguracja zaawansowana musi być obiektem JSON."
+    },
+    "api_builder": {
+        "connection_title": "Connect REST API",
+        "connection_description": "Configure a reusable API connection without editing JSON.",
+        "connection_step": "Connection",
+        "endpoint_step": "Endpoint",
+        "base_url": "Base URL",
+        "authentication": "Authentication",
+        "token": "Token",
+        "configured_placeholder": "Configured — leave blank to keep it",
+        "key_name": "Key name",
+        "key_placement": "Key placement",
+        "key_value": "Key value",
+        "header_name": "Header name",
+        "header_value": "Header value",
+        "username": "Username",
+        "password": "Password",
+        "default_headers": "Default headers",
+        "default_query": "Default query parameters",
+        "parameter_name": "Parameter name",
+        "parameter_value": "Parameter value",
+        "add_header": "Add header",
+        "add_parameter": "Add parameter",
+        "header": "Header",
+        "query_parameter": "Query parameter",
+        "test_connection": "Test connection",
+        "test_connection_help": "This sends a bounded safe request to the configured base URL. Secrets are never shown.",
+        "safe_preview": "Safe response preview",
+        "connection_failed": "The connection could not be tested safely.",
+        "save_connection": "Save connection",
+        "operation_title": "Configure API operation",
+        "operation_description": "Define how this connection is used for synced data, live reads, or actions.",
+        "operation_name": "Operation name",
+        "operation_key": "Operation key",
+        "usage": "Usage",
+        "method": "Method",
+        "path": "Endpoint path",
+        "path_help": "Use placeholders such as /orders/{order_id}; they become required arguments automatically.",
+        "records_path": "Records path",
+        "capability": "Assistant capability",
+        "capability_help": "Use a supported capability key only when this operation is intended for an assistant tool.",
+        "test_request": "Test request",
+        "test_request_help": "Read-only operations may send a bounded request and show a safe response preview.",
+        "write_test_help": "Write operations are previewed only. Setup never sends a real mutation.",
+        "preview_request": "Preview request",
+        "save_operation": "Save operation",
+        "context": "Setup context",
+        "context_for": "Configuring",
+        "request_mapping": "Mapowanie żądania",
+        "query_parameters": "Parametry zapytania",
+        "body_fields": "Pola treści JSON",
+        "mapping_help": "Wskaż argument narzędzia lub stałą wartość.",
+        "parameter_path": "Parametr lub body.path",
+        "tool_argument": "Argument narzędzia",
+        "fixed_value": "Stała wartość",
+        "configured_value": "Skonfigurowana wartość",
+        "argument_name": "Nazwa argumentu",
+        "required_argument": "Wymagany argument",
+        "response_mapping": "Mapowanie odpowiedzi i paginacja",
+        "pagination_strategy": "Strategia paginacji",
+        "no_pagination": "Bez paginacji",
+        "page_pagination": "Strona i limit",
+        "next_url_pagination": "Następny URL",
+        "safe_output_fields": "Bezpieczne pola odpowiedzi",
+        "output_help": "Asystent otrzymuje tylko zmapowane pola odpowiedzi.",
+        "output_name": "Nazwa wyniku",
+        "response_path": "Ścieżka odpowiedzi",
+        "path_test_values": "Testowe wartości argumentów ścieżki",
+        "capability_mapping": "Mapowanie wejścia możliwości",
+        "capability_mapping_help": "Połącz operację z wybraną możliwością. Kontekst pochodzi tylko z aktywnej rozmowy.",
+        "tool_input": "Wejście narzędzia",
+        "dataset_field": "Pole zbioru danych",
+        "dataset_field_key": "Klucz pola zbioru danych",
+        "context_value": "Wartość kontekstu",
+        "context_key": "Klucz kontekstu",
+        "api_argument": "Argument API",
+        "add_mapping": "Dodaj mapowanie",
+        "operation_headers": "Nagłówki operacji",
+        "operation_headers_help": "Dodaj niesekretne nagłówki endpointu. Uwierzytelnianiem zarządza połączenie.",
+        "auth": {
+            "none": "No authentication",
+            "bearer": "Bearer token",
+            "api_key": "API key",
+            "basic": "Basic auth",
+            "custom_header": "Custom header"
+        },
+        "modes": {
+            "synced": "Synced searchable data",
+            "live_read": "Live information",
+            "live_write": "Perform an action"
+        }
+    },
+    "graphql_builder": {
+        "connection_title": "Połącz z API GraphQL",
+        "connection_description": "Skonfiguruj wielokrotnie używany endpoint GraphQL i jego uwierzytelnianie.",
+        "endpoint": "Endpoint GraphQL",
+        "default_variables": "Zmienne domyślne",
+        "save_connection": "Zapisz połączenie GraphQL",
+        "operation_title": "Konfiguracja operacji GraphQL",
+        "operation_description": "Zdefiniuj zapytanie lub mutację bez edytowania wewnętrznego JSON-a.",
+        "document_section": "Dokument GraphQL",
+        "document": "Dokument GraphQL",
+        "document_help": "Użyj zapytania do synchronizacji lub odczytu, a mutacji wyłącznie do działań.",
+        "operation_name_optional": "Nazwa operacji (opcjonalnie)",
+        "variables": "Zmienne",
+        "add_variable": "Dodaj zmienną",
+        "sync_section": "Zsynchronizowana odpowiedź i paginacja Relay",
+        "has_next_path": "Ścieżka następnej strony",
+        "cursor_path": "Ścieżka kursora",
+        "cursor_variable": "Zmienna kursora",
+        "max_pages": "Maksymalna liczba stron",
+        "response_section": "Bezpieczne mapowanie odpowiedzi",
+        "add_field": "Dodaj pole odpowiedzi",
+        "test_query": "Testuj zapytanie",
+        "preview_mutation": "Podgląd żądania mutacji",
+        "save_operation": "Zapisz operację GraphQL"
+    },
+    "crm": {
+        "customer_360": "Klient 360",
+        "custom_fields": "Pola niestandardowe",
+        "segments": "Segmenty",
+        "generate_summary": "Utwórz podsumowanie",
+        "summary_stale": "Może być nieaktualne",
+        "identities": "Tożsamości",
+        "facts": "Fakty strukturalne",
+        "activity": "Aktywność",
+        "merge": "Połącz klientów",
+        "confirm_merge": "Potwierdź połączenie",
+        "no_summary": "Podsumowanie nie zostało jeszcze utworzone.",
+        "add_identity": "Dodaj tożsamość",
+        "primary": "Główna",
+        "add_fact": "Dodaj fakt",
+        "merge_preview": "Podgląd łączenia",
+        "duplicate_customer": "Duplikat klienta",
+        "ai_summary": "Podsumowanie AI",
+        "regenerate_summary": "Utwórz podsumowanie ponownie",
+        "new_segment": "Nowy segment",
+        "filter": "Filtr",
+        "matching_customers": "Pasujący klienci"
+    }
+}

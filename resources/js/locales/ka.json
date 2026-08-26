@@ -1,0 +1,963 @@
+{
+    "common": {
+        "graphql_api": "GraphQL API",
+        "language": "ენა",
+        "save": "შენახვა",
+        "saving": "ინახება...",
+        "cancel": "გაუქმება",
+        "delete": "წაშლა",
+        "deleting": "იშლება...",
+        "edit": "რედაქტირება",
+        "create": "შექმნა",
+        "close": "დახურვა",
+        "confirm": "დადასტურება",
+        "search": "ძიება",
+        "filter": "ფილტრი",
+        "reset": "გასუფთავება",
+        "loading": "იტვირთება",
+        "retry": "ხელახლა ცდა",
+        "back": "უკან",
+        "next": "შემდეგი",
+        "previous": "წინა",
+        "actions": "მოქმედებები",
+        "status": "სტატუსი",
+        "name": "სახელი",
+        "description": "აღწერა",
+        "email": "ელფოსტა",
+        "customer": "მომხმარებელი",
+        "customer_profile": "მომხმარებლის პროფილი",
+        "company": "კომპანია",
+        "owner": "პასუხისმგებელი",
+        "tags": "ტეგები",
+        "notes": "შენიშვნები",
+        "activity": "აქტივობა",
+        "add_customer": "მომხმარებლის დამატება",
+        "edit_customer": "მომხმარებლის რედაქტირება",
+        "no_customer_linked": "მომხმარებელი არ არის მიბმული",
+        "linked_customer": "მიბმული მომხმარებელი",
+        "team": "გუნდი",
+        "settings": "პარამეტრები",
+        "profile": "პროფილი",
+        "security": "უსაფრთხოება",
+        "appearance": "გარეგნობა",
+        "teams": "გუნდები",
+        "log_out": "გასვლა",
+        "select_team": "აირჩიეთ გუნდი",
+        "new_team": "ახალი გუნდი",
+        "repository": "რეპოზიტორია",
+        "documentation": "დოკუმენტაცია",
+        "light": "ნათელი",
+        "dark": "მუქი",
+        "system": "სისტემური",
+        "yes": "დიახ",
+        "no": "არა",
+        "apply": "გამოყენება",
+        "update": "განახლება",
+        "upload": "ატვირთვა",
+        "import": "იმპორტი",
+        "run": "გაშვება",
+        "view": "ნახვა",
+        "all": "ყველა",
+        "none": "არცერთი",
+        "type": "ტიპი",
+        "url": "URL",
+        "token": "ტოკენი",
+        "secret": "საიდუმლო",
+        "username": "მომხმარებლის სახელი",
+        "password": "პაროლი",
+        "updated": "განახლებული",
+        "created": "შექმნილი",
+        "platform": "პლატფორმა",
+        "page": "გვერდი",
+        "showing_of": "ნაჩვენებია {{from}}–{{to}} სულ {{total}}-დან",
+        "show_password": "პაროლის ჩვენება",
+        "hide_password": "პაროლის დამალვა",
+        "create_bot": "ბოტის შექმნა",
+        "manage_team_bots": "მართეთ თქვენი მიმდინარე გუნდის ასისტენტები.",
+        "manage_team_sources": "მართეთ თქვენი მიმდინარე გუნდის წყაროები.",
+        "rest_api": "REST API",
+        "uploaded_file": "ატვირთული ფაილი",
+        "define_team_collections": "განსაზღვრეთ საძიებო კოლექციები თქვენი მიმდინარე გუნდისთვის.",
+        "use_template": "შაბლონის გამოყენება",
+        "create_data_source": "მონაცემთა წყაროს შექმნა",
+        "create_dataset": "მონაცემთა ნაკრების შექმნა",
+        "create_workflow": "სამუშაო პროცესის შექმნა",
+        "no_bots": "ბოტები ჯერ არ არის",
+        "no_data_sources": "მონაცემთა წყაროები ჯერ არ არის",
+        "no_datasets": "მონაცემთა ნაკრებები ჯერ არ არის",
+        "no_workflows": "სამუშაო პროცესები ჯერ არ არის",
+        "no_appointments": "ჯავშნები ვერ მოიძებნა",
+        "upcoming": "მომავალი",
+        "review_appointments": "იხილეთ თქვენი ბოტების მიერ შექმნილი დადასტურებული ჯავშნები.",
+        "confirmed_bookings_empty": "დადასტურებული მომხმარებლის ჯავშნები აქ გამოჩნდება.",
+        "no_email": "ელფოსტა მითითებული არ არის",
+        "filter_by_bot": "ბოტით გაფილტვრა",
+        "filter_by_status": "სტატუსით გაფილტვრა",
+        "filter_by_data_source": "მონაცემთა წყაროთი გაფილტვრა",
+        "filter_by_health": "მდგომარეობით გაფილტვრა",
+        "previous_page": "წინა",
+        "next_page": "შემდეგი",
+        "pagination": "გვერდების ნავიგაცია",
+        "back_to": "უკან: {{resource}}",
+        "overview": "მიმოხილვა",
+        "details": "დეტალები",
+        "source_files": "წყაროს ფაილები",
+        "recent_runs": "ბოლო გაშვებები",
+        "recent_failures": "ბოლო შეცდომები",
+        "import_history": "იმპორტის ისტორია",
+        "data_source": "მონაცემთა წყარო",
+        "dataset": "მონაცემთა ნაკრები",
+        "bot": "ბოტი",
+        "appointment": "ჯავშანი",
+        "starts": "იწყება",
+        "all_bots": "ყველა ბოტი",
+        "all_data_sources": "ყველა მონაცემთა წყარო",
+        "all_statuses": "ყველა სტატუსი",
+        "no_show": "არ გამოცხადდა",
+        "scheduled": "დაგეგმილი",
+        "today": "დღეს",
+        "last_7_days": "ბოლო 7 დღე",
+        "last_30_days": "ბოლო 30 დღე",
+        "last_90_days": "ბოლო 90 დღე",
+        "all_time": "მთელი პერიოდი",
+        "set_up_first_assistant": "დააყენეთ პირველი AI ასისტენტი",
+        "set_up_another_assistant": "დააყენეთ კიდევ ერთი ასისტენტი",
+        "setup_description": "დაიწყეთ ბიზნეს-შაბლონით ან შექმენით ბოტი ნულიდან.",
+        "start_setup": "დაყენების დაწყება",
+        "close_sidebar": "გვერდითი ზოლის დახურვა",
+        "toggle_sidebar": "გვერდითი ზოლის გადართვა",
+        "more": "მეტი",
+        "select_option": "აირჩიეთ ვარიანტი",
+        "select_data_source": "აირჩიეთ მონაცემთა წყარო",
+        "select_source_type": "აირჩიეთ წყაროს ტიპი",
+        "optional": "არასავალდებულო",
+        "remove": "წაშლა",
+        "warning_title": "გაფრთხილება",
+        "are_you_sure": "დარწმუნებული ხართ?",
+        "invite_member": "გუნდის წევრის მოწვევა",
+        "email_address": "ელფოსტის მისამართი",
+        "full_name": "სრული სახელი",
+        "role": "როლი",
+        "select_role": "აირჩიეთ როლი",
+        "team_name": "გუნდის სახელი",
+        "team_members": "გუნდის წევრები",
+        "view_team": "გუნდის ნახვა",
+        "leave_team": "გუნდის დატოვება",
+        "cancel_invitation": "მოწვევის გაუქმება",
+        "delete_question": "წავშალოთ {{resource}}?",
+        "unread": "წაუკითხავი",
+        "total": "სულ",
+        "all_notifications": "ყველა",
+        "mark_all_read": "ყველას წაკითხულად მონიშვნა",
+        "mark_read": "წაკითხულად მონიშვნა",
+        "mark_unread": "წაუკითხავად მონიშვნა",
+        "caught_up": "ყველაფერი წაკითხულია.",
+        "no_notifications": "შეტყობინებები ჯერ არ არის",
+        "activity_description": "თქვენი ბოტებისა და ინტეგრაციების მნიშვნელოვანი აქტივობა აქ გამოჩნდება.",
+        "no_items": "ჯერ არაფერია.",
+        "no_results": "შედეგები ვერ მოიძებნა.",
+        "conversation_count_one": "{{count}} საუბარი",
+        "conversation_count_few": "{{count}} საუბარი",
+        "conversation_count_many": "{{count}} საუბარი",
+        "conversation_count_other": "{{count}} საუბარი",
+        "records": "Records",
+        "add_record": "Add record",
+        "edit_record": "Edit record",
+        "manual": "Manual",
+        "synced": "Synced",
+        "source": "Source",
+        "file_import": "File import",
+        "identifier": "Identifier",
+        "fields": "Fields",
+        "total_records": "total records",
+        "active_records": "active records",
+        "search_records": "Search by identifier or mapped value...",
+        "source_managed": "This record is managed by an external source.",
+        "overwrite_warning": "Changes may be overwritten during the next sync.",
+        "deactivate": "Deactivate",
+        "activate": "Activate",
+        "source_updated": "Source updated",
+        "raw_data": "Raw normalized data",
+        "no_records": "No records found.",
+        "delete_confirm": "Delete this manual record?"
+    },
+    "navigation": {
+        "home": "მთავარი",
+        "ai_assistant": "AI ასისტენტი",
+        "inbox_customers": "შემოსულები და მომხმარებლები",
+        "insights_health": "ანალიტიკა და მდგომარეობა",
+        "account": "ანგარიში",
+        "dashboard": "დეშბორდი",
+        "bots": "ბოტები",
+        "data_sources": "მონაცემთა წყაროები",
+        "datasets": "დატასეტები",
+        "billing": "ბილინგი",
+        "analytics": "ანალიტიკა",
+        "conversations": "საუბრები",
+        "customers": "მომხმარებლები",
+        "leads": "ლიდები",
+        "deals": "გარიგებები",
+        "tasks": "Tasks",
+        "appointments": "ჩანიშვნები",
+        "support_tickets": "მხარდაჭერის ბილეთები",
+        "workflows": "სამუშაო პროცესები",
+        "notifications": "შეტყობინებები",
+        "knowledge_gaps": "ცოდნის ხარვეზები",
+        "action_history": "მოქმედებების ისტორია",
+        "integration_health": "ინტეგრაციების მდგომარეობა",
+        "data_health": "მონაცემთა მდგომარეობა",
+        "ai_improvements": "AI-ის გაუმჯობესება",
+        "bot_testing": "ბოტის ტესტირება",
+        "channels": "არხები",
+        "onboarding": "დაწყება"
+    },
+    "settings": {
+        "title": "პარამეტრები",
+        "description": "მართეთ თქვენი პროფილისა და ანგარიშის პარამეტრები",
+        "language_description": "აირჩიეთ დეშბორდის ენა.",
+        "save_language": "ენის შენახვა",
+        "language_saved": "ენა შენახულია",
+        "profile_settings": "პროფილის პარამეტრები",
+        "security_settings": "უსაფრთხოების პარამეტრები",
+        "appearance_settings": "გარეგნობის პარამეტრები",
+        "appearance_description": "განაახლეთ თქვენი ანგარიშის გარეგნობის პარამეტრები",
+        "profile_description": "განაახლეთ სახელი და ელფოსტის მისამართი",
+        "email_unverified": "თქვენი ელფოსტის მისამართი დაუდასტურებელია.",
+        "resend_verification": "დააჭირეთ აქ დამადასტურებელი ელფოსტის ხელახლა გასაგზავნად.",
+        "verification_sent": "ახალი დამადასტურებელი ბმული გამოგეგზავნათ ელფოსტაზე."
+    },
+    "status": {
+        "draft": "შავი ვერსია",
+        "ready": "მზადაა",
+        "published": "გამოქვეყნებული",
+        "disabled": "გამორთული",
+        "active": "აქტიური",
+        "inactive": "არააქტიური",
+        "open": "ღია",
+        "pending": "მოლოდინში",
+        "resolved": "გადაწყვეტილი",
+        "closed": "დახურული",
+        "failed": "ვერ შესრულდა",
+        "completed": "დასრულებული",
+        "processing": "მუშავდება",
+        "error": "შეცდომა",
+        "success": "წარმატება",
+        "cancelled": "გაუქმებული",
+        "syncing": "სინქრონიზდება",
+        "preparing": "მზადდება",
+        "indexing": "ინდექსირდება",
+        "booked": "დაჯავშნილი",
+        "confirmed": "დადასტურებული",
+        "new": "ახალი",
+        "contacted": "დაკავშირებული",
+        "qualified": "კვალიფიცირებული",
+        "converted": "კონვერტირებული",
+        "lost": "დაკარგული",
+        "ignored": "იგნორირებული",
+        "healthy": "კარგ მდგომარეობაშია",
+        "warning": "გაფრთხილება"
+    },
+    "billing": {
+        "title": "ბილინგი",
+        "create_workspace": "ახალი სამუშაო სივრცის შექმნა",
+        "workspace_name": "სამუშაო სივრცის სახელი",
+        "select_plan": "აირჩიეთ გეგმა",
+        "continue_to_payment": "გადახდაზე გადასვლა",
+        "workspace_activation_pending": "სამუშაო სივრცის გააქტიურება მიმდინარეობს",
+        "workspace_created": "სამუშაო სივრცე შეიქმნა",
+        "payment_not_completed": "გადახდა არ დასრულებულა",
+        "refresh_status": "სტატუსის განახლება",
+        "try_payment_again": "გადახდის ხელახლა ცდა",
+        "current_plan": "მიმდინარე გეგმა",
+        "usage": "გამოყენება",
+        "manage_subscription": "გამოწერის მართვა",
+        "upgrade": "განახლება",
+        "downgrade": "შემცირება",
+        "cancel_subscription": "გამოწერის გაუქმება",
+        "resume_subscription": "გამოწერის გაგრძელება",
+        "renews_on": "განახლების თარიღი",
+        "cancels_on": "გაუქმების თარიღი",
+        "payment_failed": "გადახდა ვერ შესრულდა",
+        "description": "იხილეთ თქვენი გუნდის გეგმა, უფლებები და მიმდინარე გამოყენება.",
+        "provider_payments": "პროვაიდერის მიერ მართული გადახდები",
+        "stripe_available": "Stripe ბილინგი ხელმისაწვდომია",
+        "billing_unavailable": "ბილინგი არ არის კონფიგურირებული",
+        "team_members": "გუნდის წევრები",
+        "customer_conversations": "მომხმარებლის საუბრები",
+        "production_actions": "პროდუქციული მოქმედებები",
+        "unlimited": "შეუზღუდავი",
+        "choose_plan": "გეგმის არჩევა",
+        "change_plan": "გეგმის შეცვლა",
+        "limit_reached": "ლიმიტი მიღწეულია",
+        "approaching_limit": "ლიმიტს უახლოვდება",
+        "within_plan": "გეგმის ფარგლებში",
+        "unlimited_for_plan": "ამ გეგმისთვის შეუზღუდავია.",
+        "period_limit": "მიმდინარე პერიოდის ლიმიტის {{percentage}}%.",
+        "plan_comparison": "გეგმების შედარება",
+        "plan_registry_note": "გეგმების ლიმიტები და ფუნქციები სერვერის რეესტრიდან მოდის. Stripe-ის ფასები სერვერზე განისაზღვრება.",
+        "manage_billing": "ბილინგის მართვა",
+        "cancel_at_period_end": "პერიოდის ბოლოს გაუქმება",
+        "usage_label": "გამოყენება — {{period}}"
+    },
+    "dashboard": {
+        "good_morning": "დილა მშვიდობისა",
+        "good_afternoon": "შუადღე მშვიდობისა",
+        "good_evening": "საღამო მშვიდობისა",
+        "attention_description": "აი, რას უნდა მიაქციოთ დღეს ყურადღება.",
+        "setup_title": "მოამზადეთ თქვენი ასისტენტი",
+        "metrics": {
+            "conversations": "კონვერსაციები",
+            "leads": "ლიდები",
+            "successful_actions": "წარმატებული მოქმედებები",
+            "handoffs": "ადამიანთან გადაცემები"
+        },
+        "no_comparison": "შედარება ჯერ მიუწვდომელია",
+        "vs_previous": "წინა პერიოდთან შედარებით",
+        "needs_attention": "საჭიროებს ყურადღებას",
+        "everything_good": "ყველაფერი კარგადაა.",
+        "attention": {
+            "handoffs": "მომლოდინე გადაცემები",
+            "failed_actions": "წარუმატებელი მოქმედებები",
+            "failed_imports": "წარუმატებელი იმპორტები",
+            "unassigned": "მიუნიშნავი ღია კონვერსაციები",
+            "integration_failures": "ინტეგრაციის შეცდომები"
+        },
+        "system_health": "სისტემის ჯანმრთელობა",
+        "health": {
+            "bots": "ბოტები",
+            "data": "მონაცემები",
+            "integrations": "ინტეგრაციები",
+            "channels": "არხები"
+        },
+        "conversation_activity": "კონვერსაციების აქტივობა",
+        "recent_conversations": "ბოლო კონვერსაციები",
+        "no_conversations": "ამ პერიოდში პროდუქტიული კონვერსაციები არ არის.",
+        "ai_improvements": "AI-ის გაუმჯობესების შესაძლებლობები",
+        "no_improvements": "გაუმჯობესების შესაძლებლობები ჯერ არ არის.",
+        "improvement_opportunity": "გადახედეთ გაუმჯობესების შესაძლებლობას.",
+        "view_improvements": "AI-ის გაუმჯობესებების ნახვა",
+        "business_outcomes": "ბიზნესის შედეგები",
+        "outcomes": {
+            "leads": "მიღებული ლიდები",
+            "appointments": "დაჯავშნილი შეხვედრები",
+            "tickets": "მხარდაჭერის ბილეთები",
+            "completed_actions": "დასრულებული მოქმედებები"
+        },
+        "workspace_summary": "სამუშაო სივრცის შეჯამება",
+        "notifications": "წაუკითხავი შეტყობინებები",
+        "billing_usage": "ბილინგის გამოყენება",
+        "quick_actions": "სწრაფი მოქმედებები",
+        "actions": {
+            "create_bot": "ბოტის შექმნა",
+            "add_data_source": "მონაცემთა წყაროს დამატება",
+            "run_bot_test": "ბოტის ტესტი",
+            "configure_channel": "არხის კონფიგურაცია",
+            "open_inbox": "ინბოქსის გახსნა"
+        },
+        "steps": {
+            "bot": "შექმენით პირველი ბოტი",
+            "data": "დააკავშირეთ მონაცემები",
+            "capabilities": "მოარგეთ შესაძლებლობები",
+            "tests": "გაუშვით ბოტის ტესტი",
+            "design": "მოარგეთ გარეგნობა",
+            "domain": "დაამატეთ ვებსაიტის დომენი",
+            "embed": "მოამზადეთ ვიჯეტი"
+        }
+    },
+    "templates": {
+        "setup": {
+            "title": "Setup",
+            "index_description": "Choose a business starting point. Review what the assistant needs before creating a draft.",
+            "overview": "Setup overview",
+            "overview_description": "Each item explains whether information should be synced, fetched live, or connected as an action.",
+            "why": "Why it matters",
+            "create_title": "Create an assistant draft",
+            "create_description": "Applying a template creates a draft Bot and opens this actionable setup plan.",
+            "safe_scaffolding": "Safe setup scaffolding",
+            "safe_scaffolding_description": "No sample records, credentials, API operations, channels, or workflows are created automatically.",
+            "bot_name": "Assistant name",
+            "channels": "Channels",
+            "channels_description": "Connect only the channels you want to launch.",
+            "suggested_fields": "Suggested fields",
+            "launch_readiness": "Launch readiness",
+            "progress_summary": "{{completed}} of {{total}} required items ready",
+            "optional_does_not_block": "Recommended and optional items improve the assistant but do not block launch readiness.",
+            "custom_description": "Custom Bots are not forced into a business template. Configure the resources that fit your use case.",
+            "automation_description": "These are recommendations only. Review and create workflows when you are ready.",
+            "no_recommendations": "No recommendations for this template.",
+            "testing_title": "Testing and launch",
+            "testing_description": "Use these suggested questions as a starting point for saved Bot tests.",
+            "safety_note": "Template guidance is trusted metadata. It never fabricates records, credentials, integrations, workflows, or external availability.",
+            "steps": {
+                "data": {
+                    "title": "Connect data and knowledge",
+                    "description": "Add the synced knowledge and catalog sources your assistant should use."
+                },
+                "capabilities": {
+                    "title": "Configure live capabilities",
+                    "description": "Review the live reads and writes that need real API operations."
+                },
+                "tests": {
+                    "title": "Run a Bot test",
+                    "description": "Try representative customer questions before publishing."
+                },
+                "design": {
+                    "title": "Customize appearance",
+                    "description": "Adjust the widget and product cards for your brand."
+                },
+                "domain": {
+                    "title": "Add a website domain",
+                    "description": "Allow the domains where the assistant will be embedded."
+                },
+                "embed": {
+                    "title": "Prepare the widget",
+                    "description": "Use the embed code after the Bot and domain are ready."
+                }
+            }
+        },
+        "actions": {
+            "all_templates": "All templates",
+            "start_from_scratch": "Start from scratch",
+            "review_setup": "Review setup",
+            "create_dataset": "Create dataset",
+            "connect_data_source": "Connect source",
+            "configure_mapping": "Configure mapping",
+            "configure_live_api": "Configure live API",
+            "configure_write_api": "Configure write API",
+            "configure_channel": "Configure channel",
+            "open_capabilities": "Open capabilities",
+            "open_workflows": "Review workflows",
+            "run_bot_test": "Run Bot test",
+            "open_design": "Customize design",
+            "open_bot": "Open Bot",
+            "not_available": "Not available yet",
+            "creating": "Creating draft…",
+            "use_template": "Use this template"
+        },
+        "card": {
+            "supported_capabilities": "supported capabilities",
+            "core_setup": "Core setup requirements"
+        },
+        "importance": {
+            "required": "Required",
+            "recommended": "Recommended",
+            "optional": "Optional"
+        },
+        "data_modes": {
+            "synced": "Synced data",
+            "live": "Live API",
+            "hybrid": "Hybrid"
+        },
+        "support": {
+            "future_custom": "Future/custom integration",
+            "not_available_yet": "Not available yet"
+        },
+        "status": {
+            "not_configured": "Not configured",
+            "partially_configured": "Partially configured",
+            "ready": "Ready",
+            "unavailable": "Unavailable",
+            "dataset_not_connected": "No compatible dataset is attached.",
+            "dataset_needs_configuration": "The attached dataset is not ready yet.",
+            "capability_not_ready": "The required capability is not ready.",
+            "api_not_configured": "A matching API operation is not configured.",
+            "channel_not_configured": "This channel is not connected yet.",
+            "connected": "Connected and ready.",
+            "workflow_not_configured": "Review and create this workflow when ready.",
+            "future_custom": "This needs a future or custom integration."
+        },
+        "categories": {
+            "data_knowledge": "Data and knowledge",
+            "data_knowledge_description": "Synced sources for searchable information and business knowledge.",
+            "live_integrations": "Live integrations",
+            "live_integrations_description": "Fetch changing business data on demand instead of importing operational history.",
+            "actions": "Actions",
+            "actions_description": "Write operations change business state and must use a configured API.",
+            "automation": "Automation",
+            "automation_description": "Workflow recommendations are optional and are never created automatically.",
+            "channels": "Channels",
+            "channels_description": "Communication channels where customers can reach the assistant."
+        },
+        "requirement_copy": {
+            "knowledge": {
+                "description": "Synced knowledge that gives the assistant reliable business context.",
+                "why": "Keep relatively stable information searchable without requiring a live request."
+            },
+            "catalog": {
+                "description": "A searchable structured catalog with the fields needed for discovery and details.",
+                "why": "Keep the searchable base local while volatile fields can remain live."
+            },
+            "live_read": {
+                "description": "A read-only API operation that fetches changing information on demand.",
+                "why": "Avoid importing sensitive or fast-changing operational history."
+            },
+            "live_write": {
+                "description": "A write API operation that performs an external business action.",
+                "why": "Keep external changes behind an authorized operation and existing confirmation safety."
+            },
+            "workflow": {
+                "description": "A recommended internal automation for the team to review.",
+                "why": "Turn important customer events into consistent team follow-up."
+            },
+            "channel": {
+                "description": "A recommended customer communication channel.",
+                "why": "Give customers a clear way to reach the assistant."
+            }
+        },
+        "capabilities": {
+            "search_catalog": "Search catalog",
+            "get_product_details": "Product details",
+            "recommend_products": "Product recommendations",
+            "compare_products": "Compare products",
+            "lookup_faq": "FAQ and knowledge answers",
+            "check_stock": "Check stock",
+            "check_order_status": "Check order status",
+            "track_order": "Track order",
+            "get_shipping_info": "Get shipping information",
+            "add_to_cart": "Add to cart",
+            "capture_lead": "Capture lead",
+            "create_support_ticket": "Create support ticket",
+            "book_appointment": "Book appointment",
+            "get_store_locations": "Find locations",
+            "request_human_handoff": "Request human handoff"
+        },
+        "outcomes": {
+            "product_discovery": "Help customers discover products.",
+            "product_details": "Answer product detail questions.",
+            "recommendations": "Recommend relevant options.",
+            "comparison": "Compare products or listings.",
+            "policy_answers": "Answer policy and FAQ questions.",
+            "stock_checking": "Check current stock when connected.",
+            "order_tracking": "Check orders and shipment tracking.",
+            "cart_actions": "Support cart actions through an API.",
+            "lead_capture": "Capture purchase intent and support requests.",
+            "vehicle_discovery": "Help shoppers discover vehicles.",
+            "vehicle_comparison": "Compare vehicle options.",
+            "inventory_availability": "Check inventory availability.",
+            "test_drive_requests": "Collect test-drive requests.",
+            "lead_qualification": "Qualify sales leads.",
+            "trade_in_inquiry": "Collect trade-in inquiries for follow-up.",
+            "finance_faq": "Answer finance and ownership questions.",
+            "locations": "Share branch and service locations.",
+            "property_discovery": "Help people discover properties.",
+            "property_comparison": "Compare property options.",
+            "buyer_qualification": "Collect buyer or renter preferences.",
+            "viewing_requests": "Collect viewing requests.",
+            "office_information": "Share office information.",
+            "room_discovery": "Help guests explore room types.",
+            "hotel_information": "Answer hotel and amenity questions.",
+            "policies": "Answer guest policy questions.",
+            "availability": "Check availability when connected.",
+            "rates": "Show live rates when connected.",
+            "reservation_support": "Guide reservation requests and support.",
+            "service_information": "Share general clinic service information.",
+            "hours_locations": "Share hours and locations.",
+            "insurance_information": "Answer general insurance and billing questions.",
+            "preparation_information": "Share general preparation instructions.",
+            "appointment_booking": "Help guests request appointments.",
+            "support_escalation": "Escalate administrative support needs.",
+            "menu_discovery": "Help guests discover menu items.",
+            "menu_questions": "Answer general menu questions.",
+            "dietary_information": "Share provided dietary information.",
+            "restaurant_policies": "Answer restaurant policy questions.",
+            "reservation_requests": "Guide reservation requests.",
+            "documentation_search": "Search product documentation.",
+            "faq": "Answer frequently asked questions.",
+            "troubleshooting": "Guide documented troubleshooting.",
+            "support_tickets": "Create support tickets through an API.",
+            "human_escalation": "Escalate complex requests to a person.",
+            "service_status": "Share status information when connected."
+        },
+        "ecommerce": {
+            "name": "E-commerce",
+            "description": "A practical assistant for product discovery, support, and connected commerce actions.",
+            "best_for": "Online stores, catalogs, customer questions, and live commerce APIs."
+        },
+        "car_dealership": {
+            "name": "Car dealership",
+            "description": "A vehicle assistant for inventory discovery, comparisons, and sales follow-up.",
+            "best_for": "Dealership inventory, test drives, FAQs, and sales leads."
+        },
+        "real_estate": {
+            "name": "Real estate",
+            "description": "A property assistant for discovery, qualification, and viewing requests.",
+            "best_for": "Property listings, buyer or renter questions, and office follow-up."
+        },
+        "hotel": {
+            "name": "Hotel",
+            "description": "A guest assistant for room information, policies, and connected availability.",
+            "best_for": "Room types, hotel information, guest support, and future reservation integrations."
+        },
+        "clinic": {
+            "name": "Clinic",
+            "description": "An administrative clinic assistant for services, general information, and appointments.",
+            "best_for": "Non-diagnostic patient information, locations, and appointment requests."
+        },
+        "restaurant": {
+            "name": "Restaurant",
+            "description": "A restaurant assistant for menu discovery, general questions, and locations.",
+            "best_for": "Menus, restaurant policies, locations, and future reservation integrations."
+        },
+        "saas_support": {
+            "name": "SaaS / Support",
+            "description": "A support assistant for documentation, troubleshooting, tickets, and escalation.",
+            "best_for": "Help centers, product documentation, support teams, and customer self-service."
+        },
+        "custom": {
+            "name": "Custom setup",
+            "description": "Configure this Bot using the resources that fit your business.",
+            "best_for": "Teams starting from scratch or customizing an existing Bot."
+        },
+        "requirements": {
+            "products": {
+                "title": "Products"
+            },
+            "policies": {
+                "title": "Policies"
+            },
+            "inventory": {
+                "title": "Inventory"
+            },
+            "orders": {
+                "title": "Orders"
+            },
+            "tracking": {
+                "title": "Tracking"
+            },
+            "shipping": {
+                "title": "Shipping"
+            },
+            "cart": {
+                "title": "Cart"
+            },
+            "lead_capture": {
+                "title": "Lead Capture"
+            },
+            "support_ticket": {
+                "title": "Support Ticket"
+            },
+            "lead_notification": {
+                "title": "Lead Notification"
+            },
+            "support_notification": {
+                "title": "Support Notification"
+            },
+            "handoff_notification": {
+                "title": "Handoff Notification"
+            },
+            "website": {
+                "title": "Website"
+            },
+            "whatsapp": {
+                "title": "Whatsapp"
+            },
+            "vehicles": {
+                "title": "Vehicles"
+            },
+            "vehicle_availability": {
+                "title": "Vehicle Availability"
+            },
+            "dealership_faq": {
+                "title": "Dealership Faq"
+            },
+            "locations": {
+                "title": "Locations"
+            },
+            "test_drive": {
+                "title": "Test Drive"
+            },
+            "test_drive_notification": {
+                "title": "Test Drive Notification"
+            },
+            "trade_in": {
+                "title": "Trade In"
+            },
+            "properties": {
+                "title": "Properties"
+            },
+            "listing_status": {
+                "title": "Listing Status"
+            },
+            "real_estate_faq": {
+                "title": "Real Estate Faq"
+            },
+            "viewing_booking": {
+                "title": "Viewing Booking"
+            },
+            "viewing_notification": {
+                "title": "Viewing Notification"
+            },
+            "lead_qualification": {
+                "title": "Lead Qualification"
+            },
+            "office_locations": {
+                "title": "Office Locations"
+            },
+            "rooms": {
+                "title": "Rooms"
+            },
+            "hotel_information": {
+                "title": "Hotel Information"
+            },
+            "availability": {
+                "title": "Availability"
+            },
+            "rates": {
+                "title": "Rates"
+            },
+            "reservation": {
+                "title": "Reservation"
+            },
+            "reservation_lookup": {
+                "title": "Reservation Lookup"
+            },
+            "reservation_notification": {
+                "title": "Reservation Notification"
+            },
+            "services": {
+                "title": "Services"
+            },
+            "clinic_faq": {
+                "title": "Clinic Faq"
+            },
+            "clinic_locations": {
+                "title": "Clinic Locations"
+            },
+            "appointment_slots": {
+                "title": "Appointment Slots"
+            },
+            "appointment_booking": {
+                "title": "Appointment Booking"
+            },
+            "patient_intake": {
+                "title": "Patient Intake"
+            },
+            "appointment_notification": {
+                "title": "Appointment Notification"
+            },
+            "menu": {
+                "title": "Menu"
+            },
+            "restaurant_faq": {
+                "title": "Restaurant Faq"
+            },
+            "restaurant_locations": {
+                "title": "Restaurant Locations"
+            },
+            "table_availability": {
+                "title": "Table Availability"
+            },
+            "table_reservation": {
+                "title": "Table Reservation"
+            },
+            "instagram": {
+                "title": "Instagram"
+            },
+            "help_center": {
+                "title": "Help Center"
+            },
+            "support_faq": {
+                "title": "Support Faq"
+            },
+            "documentation": {
+                "title": "Documentation"
+            },
+            "account_lookup": {
+                "title": "Account Lookup"
+            },
+            "service_status": {
+                "title": "Service Status"
+            },
+            "email": {
+                "title": "Email"
+            }
+        },
+        "tests": {
+            "ecommerce": {
+                "product_search": "Find me a product under $100.",
+                "policy": "What is your return policy?",
+                "stock": "Is this item in stock?"
+            },
+            "car_dealership": {
+                "vehicle_search": "Show me SUVs under my budget.",
+                "test_drive": "I want to request a test drive."
+            },
+            "real_estate": {
+                "property_search": "Find apartments in my preferred area.",
+                "lead": "I want to speak with an agent."
+            },
+            "hotel": {
+                "room_information": "What room types and amenities do you offer?",
+                "policies": "What time is check-in?"
+            },
+            "clinic": {
+                "service_information": "What services do you offer?",
+                "appointment": "I want to request an appointment."
+            },
+            "restaurant": {
+                "menu": "What is on the menu?",
+                "policies": "Are you open today?"
+            },
+            "saas_support": {
+                "documentation": "How do I configure this feature?",
+                "ticket": "I need help from support."
+            }
+        }
+    },
+    "data_source_chooser": {
+        "graphql_title": "GraphQL API-ს დაკავშირება",
+        "graphql_description": "მოითხოვეთ და დაასინქრონეთ მონაცემები GraphQL დოკუმენტებით.",
+        "graphql_help": "საუკეთესოა GraphQL query-ებისა და mutation-ების მქონე API-ებისთვის.",
+        "title": "მონაცემთა წყაროს დამატება",
+        "description": "აირჩიეთ, საიდან მოდის თქვენი გუნდის მონაცემები.",
+        "continue": "გაგრძელება",
+        "file_title": "ფაილის ატვირთვა",
+        "file_description": "CSV, JSON ან XLSX",
+        "file_help": "საუკეთესოა ხელით ატვირთვისა და ერთჯერადი იმპორტისთვის.",
+        "api_title": "REST API-ს დაკავშირება",
+        "api_description": "მონაცემების სინქრონიზაცია ან ცოცხლად მიღება",
+        "api_help": "საუკეთესოა დაკავშირებული და ხშირად ცვალებადი სისტემებისთვის.",
+        "advanced": "გაფართოებული კონფიგურაცია",
+        "advanced_help": "უმეტეს მომხმარებელს ეს არ სჭირდება. უცნობი ძველი პარამეტრები უსაფრთხოდ შენარჩუნდება.",
+        "invalid_json": "გაფართოებული კონფიგურაცია JSON ობიექტი უნდა იყოს."
+    },
+    "api_builder": {
+        "connection_title": "Connect REST API",
+        "connection_description": "Configure a reusable API connection without editing JSON.",
+        "connection_step": "Connection",
+        "endpoint_step": "Endpoint",
+        "base_url": "Base URL",
+        "authentication": "Authentication",
+        "token": "Token",
+        "configured_placeholder": "Configured — leave blank to keep it",
+        "key_name": "Key name",
+        "key_placement": "Key placement",
+        "key_value": "Key value",
+        "header_name": "Header name",
+        "header_value": "Header value",
+        "username": "Username",
+        "password": "Password",
+        "default_headers": "Default headers",
+        "default_query": "Default query parameters",
+        "parameter_name": "Parameter name",
+        "parameter_value": "Parameter value",
+        "add_header": "Add header",
+        "add_parameter": "Add parameter",
+        "header": "Header",
+        "query_parameter": "Query parameter",
+        "test_connection": "Test connection",
+        "test_connection_help": "This sends a bounded safe request to the configured base URL. Secrets are never shown.",
+        "safe_preview": "Safe response preview",
+        "connection_failed": "The connection could not be tested safely.",
+        "save_connection": "Save connection",
+        "operation_title": "Configure API operation",
+        "operation_description": "Define how this connection is used for synced data, live reads, or actions.",
+        "operation_name": "Operation name",
+        "operation_key": "Operation key",
+        "usage": "Usage",
+        "method": "Method",
+        "path": "Endpoint path",
+        "path_help": "Use placeholders such as /orders/{order_id}; they become required arguments automatically.",
+        "records_path": "Records path",
+        "capability": "Assistant capability",
+        "capability_help": "Use a supported capability key only when this operation is intended for an assistant tool.",
+        "test_request": "Test request",
+        "test_request_help": "Read-only operations may send a bounded request and show a safe response preview.",
+        "write_test_help": "Write operations are previewed only. Setup never sends a real mutation.",
+        "preview_request": "Preview request",
+        "save_operation": "Save operation",
+        "context": "Setup context",
+        "context_for": "Configuring",
+        "request_mapping": "მოთხოვნის მიბმა",
+        "query_parameters": "Query პარამეტრები",
+        "body_fields": "JSON body ველები",
+        "mapping_help": "მიუთითეთ ინსტრუმენტის არგუმენტი ან ფიქსირებული მნიშვნელობა.",
+        "parameter_path": "პარამეტრი ან body.path",
+        "tool_argument": "ინსტრუმენტის არგუმენტი",
+        "fixed_value": "ფიქსირებული მნიშვნელობა",
+        "configured_value": "კონფიგურირებული მნიშვნელობა",
+        "argument_name": "არგუმენტის სახელი",
+        "required_argument": "სავალდებულო არგუმენტი",
+        "response_mapping": "პასუხის მიბმა და გვერდებად დაყოფა",
+        "pagination_strategy": "გვერდებად დაყოფის სტრატეგია",
+        "no_pagination": "გვერდებად დაყოფის გარეშე",
+        "page_pagination": "გვერდი და ლიმიტი",
+        "next_url_pagination": "შემდეგი URL",
+        "safe_output_fields": "უსაფრთხო პასუხის ველები",
+        "output_help": "ასისტენტს გადაეცემა მხოლოდ მიბმული პასუხის ველები.",
+        "output_name": "პასუხის სახელი",
+        "response_path": "პასუხის გზა",
+        "path_test_values": "გზის არგუმენტების სატესტო მნიშვნელობები",
+        "capability_mapping": "შესაძლებლობის შეყვანის მიბმა",
+        "capability_mapping_help": "მიუთითეთ ოპერაცია არჩეულ შესაძლებლობაზე. კონტექსტი მიიღება მხოლოდ აქტიური საუბრისგან.",
+        "tool_input": "ინსტრუმენტის შეყვანა",
+        "dataset_field": "Dataset ველი",
+        "dataset_field_key": "Dataset ველის გასაღები",
+        "context_value": "კონტექსტის მნიშვნელობა",
+        "context_key": "კონტექსტის გასაღები",
+        "api_argument": "API არგუმენტი",
+        "add_mapping": "მიბმის დამატება",
+        "operation_headers": "ოპერაციის ჰედერები",
+        "operation_headers_help": "დაამატეთ ამ endpoint-ის არასაიდუმლო ჰედერები. ავტორიზაციას კავშირი მართავს.",
+        "auth": {
+            "none": "No authentication",
+            "bearer": "Bearer token",
+            "api_key": "API key",
+            "basic": "Basic auth",
+            "custom_header": "Custom header"
+        },
+        "modes": {
+            "synced": "Synced searchable data",
+            "live_read": "Live information",
+            "live_write": "Perform an action"
+        }
+    },
+    "graphql_builder": {
+        "connection_title": "GraphQL API-ს დაკავშირება",
+        "connection_description": "დააკონფიგურირეთ ხელახლა გამოსაყენებელი GraphQL endpoint და მისი ავტორიზაცია.",
+        "endpoint": "GraphQL endpoint",
+        "default_variables": "ნაგულისხმევი ცვლადები",
+        "save_connection": "GraphQL კავშირის შენახვა",
+        "operation_title": "GraphQL ოპერაციის კონფიგურაცია",
+        "operation_description": "განსაზღვრეთ query ან mutation შიდა JSON-ის რედაქტირების გარეშე.",
+        "document_section": "GraphQL დოკუმენტი",
+        "document": "GraphQL დოკუმენტი",
+        "document_help": "გამოიყენეთ query სინქრონიზაციისა და წაკითხვისთვის, mutation კი მხოლოდ მოქმედებებისთვის.",
+        "operation_name_optional": "ოპერაციის სახელი (არასავალდებულო)",
+        "variables": "ცვლადები",
+        "add_variable": "ცვლადის დამატება",
+        "sync_section": "სინქრონიზებული პასუხი და Relay გვერდებადობა",
+        "has_next_path": "შემდეგი გვერდის გზა",
+        "cursor_path": "კურსორის გზა",
+        "cursor_variable": "კურსორის ცვლადი",
+        "max_pages": "გვერდების მაქსიმუმი",
+        "response_section": "უსაფრთხო პასუხის mapping",
+        "add_field": "პასუხის ველის დამატება",
+        "test_query": "query-ის ტესტირება",
+        "preview_mutation": "mutation მოთხოვნის წინასწარი ნახვა",
+        "save_operation": "GraphQL ოპერაციის შენახვა"
+    },
+    "crm": {
+        "customer_360": "მომხმარებელი 360",
+        "custom_fields": "მორგებული ველები",
+        "segments": "სეგმენტები",
+        "generate_summary": "შეჯამების შექმნა",
+        "summary_stale": "შეიძლება მოძველებული იყოს",
+        "identities": "იდენტობები",
+        "facts": "სტრუქტურირებული ფაქტები",
+        "activity": "აქტივობა",
+        "merge": "მომხმარებლების გაერთიანება",
+        "confirm_merge": "გაერთიანების დადასტურება",
+        "no_summary": "შეჯამება ჯერ არ შექმნილა.",
+        "add_identity": "იდენტობის დამატება",
+        "primary": "ძირითადი",
+        "add_fact": "ფაქტის დამატება",
+        "merge_preview": "გაერთიანების წინასწარი ნახვა",
+        "duplicate_customer": "დუბლირებული მომხმარებელი",
+        "ai_summary": "AI შეჯამება",
+        "regenerate_summary": "შეჯამების ხელახლა შექმნა",
+        "new_segment": "ახალი სეგმენტი",
+        "filter": "ფილტრი",
+        "matching_customers": "შესაბამისი მომხმარებლები"
+    }
+}

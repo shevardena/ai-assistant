@@ -1,0 +1,27 @@
+@import 'tailwindcss';
+
+@layer base {
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        min-width: 100%;
+        min-height: 100vh;
+        background: white;
+        color: #171717;
+        font-family:
+            'Noto Sans Georgian',
+            'Noto Sans',
+            'Instrument Sans',
+            ui-sans-serif,
+            system-ui,
+            sans-serif,
+            'Apple Color Emoji',
+            'Segoe UI Emoji',
+            'Noto Color Emoji';
+        font-feature-settings: 'kern' 1, 'liga' 1;
+        text-rendering: optimizeLegibility;
+    }
+}

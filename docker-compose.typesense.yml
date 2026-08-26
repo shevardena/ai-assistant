@@ -1,0 +1,11 @@
+services:
+  typesense:
+    image: typesense/typesense:28.0
+    command: --data-dir /data --api-key=${TYPESENSE_API_KEY:-dev-typesense-key}
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense-data:/data
+
+volumes:
+  typesense-data:

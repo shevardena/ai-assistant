@@ -1,0 +1,69 @@
+<?php
+
+namespace App\Policies;
+
+use App\Enums\TeamPermission;
+use App\Models\Customer;
+use App\Models\User;
+use App\Policies\Concerns\AuthorizesCurrentTeamResources;
+
+class CustomerPolicy
+{
+    use AuthorizesCurrentTeamResources;
+
+    /**
+     * Determine whether the user can view any models.
+     */
+    public function viewAny(User $user): bool
+    {
+        return $this->canAccessCurrentTeam($user, TeamPermission::CustomersView);
+    }
+
+    /**
+     * Determine whether the user can view the model.
+     */
+    public function view(User $user, Customer $customer): bool
+    {
+        return $this->canAccessTeamResource($user, $customer->team_id, TeamPermission::CustomersView);
+    }
+
+    /**
+     * Determine whether the user can create models.
+     */
+    public function create(User $user): bool
+    {
+        return $this->canAccessCurrentTeam($user, TeamPermission::CustomersManage);
+    }
+
+    /**
+     * Determine whether the user can update the model.
+     */
+    public function update(User $user, Customer $customer): bool
+    {
+        return $this->canAccessTeamResource($user, $customer->team_id, TeamPermission::CustomersManage);
+    }
+
+    /**
+     * Determine whether the user can delete the model.
+     */
+    public function delete(User $user, Customer $customer): bool
+    {
+        return false;
+    }
+
+    /**
+     * Determine whether the user can restore the model.
+     */
+    public function restore(User $user, Customer $customer): bool
+    {
+        return false;
+    }
+
+    /**
+     * Determine whether the user can permanently delete the model.
+     */
+    public function forceDelete(User $user, Customer $customer): bool
+    {
+        return false;
+    }
+}

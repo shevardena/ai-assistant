@@ -1,0 +1,1025 @@
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { ArrowLeft, FlaskConical, Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import Heading from '@/components/heading';
+import InputError from '@/components/input-error';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { create, store, test } from '@/routes/data-sources/api-operations';
+
+type Props = {
+    dataSource: { id: number; name: string; config: Record<string, unknown> };
+    templateContext?: {
+        requirementKey: string;
+        capability?: string;
+        botId?: number | null;
+    } | null;
+};
+
+type ParameterRow = {
+    name: string;
+    source: 'fixed' | 'tool_argument';
+    value: string;
+    argument: string;
+    required: boolean;
+    type: 'string' | 'integer' | 'number' | 'boolean';
+};
+
+type ResponseField = {
+    name: string;
+    path: string;
+    required: boolean;
+};
+
+type InputMappingRow = {
+    model_input: string;
+    source: 'model_input' | 'dataset_field' | 'context_value';
+    dataset_field: string;
+    context_key: string;
+    operation_argument: string;
+};
+
+type KeyValueRow = { name: string; value: string };
+
+const emptyParameter = (): ParameterRow => ({
+    name: '',
+    source: 'tool_argument',
+    value: '',
+    argument: '',
+    required: false,
+    type: 'string',
+});
+
+const emptyResponseField = (): ResponseField => ({
+    name: '',
+    path: '',
+    required: false,
+});
+
+const emptyInputMapping = (): InputMappingRow => ({
+    model_input: '',
+    source: 'model_input',
+    dataset_field: '',
+    context_key: '',
+    operation_argument: '',
+});
+
+const emptyKeyValue = (): KeyValueRow => ({ name: '', value: '' });
+
+export default function ApiOperationCreate({
+    dataSource,
+    templateContext,
+}: Props) {
+    const { t } = useTranslation();
+    const { currentTeam } = usePage().props;
+    const form = useForm({
+        key: '',
+        name: '',
+        usage: 'live_read',
+        method: 'GET',
+        path: '/',
+        records_path: 'root',
+        capability: templateContext?.capability ?? '',
+        headers: [] as KeyValueRow[],
+        query_parameters: [] as ParameterRow[],
+        body_parameters: [] as ParameterRow[],
+        response_fields: [
+            { name: 'status', path: 'status', required: true },
+        ] as ResponseField[],
+        response_mapping: {},
+        pagination: { type: 'none' },
+        timeout_ms: 10000,
+        is_enabled: true,
+        test_arguments: {},
+        bot: templateContext?.botId ?? '',
+        input_mapping: [] as InputMappingRow[],
+    });
+    const [preview, setPreview] = useState<Record<string, unknown> | null>(
+        null,
+    );
+    const [testing, setTesting] = useState(false);
+    const currentTeamSlug = currentTeam?.slug;
+
+    const pathArguments = Array.from(
+        form.data.path.matchAll(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g),
+    ).map((match) => match[1]);
+
+    const updateParameter = (
+        section: 'query_parameters' | 'body_parameters',
+        index: number,
+        key: keyof ParameterRow,
+        value: string | boolean,
+    ) => {
+        const rows = form.data[section].map((row, rowIndex) =>
+            rowIndex === index ? { ...row, [key]: value } : row,
+        );
+        form.setData(section, rows);
+    };
+
+    const addParameter = (section: 'query_parameters' | 'body_parameters') =>
+        form.setData(section, [...form.data[section], emptyParameter()]);
+
+    const removeParameter = (
+        section: 'query_parameters' | 'body_parameters',
+        index: number,
+    ) =>
+        form.setData(
+            section,
+            form.data[section].filter((_, i) => i !== index),
+        );
+
+    const updateResponseField = (
+        index: number,
+        key: keyof ResponseField,
+        value: string | boolean,
+    ) =>
+        form.setData(
+            'response_fields',
+            form.data.response_fields.map((field, fieldIndex) =>
+                fieldIndex === index ? { ...field, [key]: value } : field,
+            ),
+        );
+
+    const updateInputMapping = (
+        index: number,
+        key: keyof InputMappingRow,
+        value: string,
+    ) =>
+        form.setData(
+            'input_mapping',
+            form.data.input_mapping.map((row, rowIndex) =>
+                rowIndex === index ? { ...row, [key]: value } : row,
+            ),
+        );
+
+    const updateHeader = (
+        index: number,
+        key: keyof KeyValueRow,
+        value: string,
+    ) =>
+        form.setData(
+            'headers',
+            form.data.headers.map((row, rowIndex) =>
+                rowIndex === index ? { ...row, [key]: value } : row,
+            ),
+        );
+
+    if (!currentTeamSlug) {
+        return null;
+    }
+
+    const runTest = async () => {
+        setTesting(true);
+
+        try {
+            const response = await fetch(
+                test.url([currentTeamSlug, dataSource.id]),
+                {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN':
+                            document
+                                .querySelector('meta[name="csrf-token"]')
+                                ?.getAttribute('content') ?? '',
+                        Accept: 'application/json',
+                    },
+                    body: JSON.stringify(form.data),
+                },
+            );
+            const payload = await response.json();
+            setPreview(payload);
+        } finally {
+            setTesting(false);
+        }
+    };
+
+    return (
+        <>
+            <Head title={t('api_builder.operation_title')} />
+            <div className="max-w-4xl space-y-6 p-4 md:p-6">
+                <div className="flex items-start gap-3">
+                    <Button variant="ghost" size="icon" asChild>
+                        <Link
+                            href={create.url([currentTeamSlug, dataSource.id])}
+                            aria-label={t('common.back')}
+                        >
+                            <ArrowLeft />
+                        </Link>
+                    </Button>
+                    <Heading
+                        variant="small"
+                        title={t('api_builder.operation_title')}
+                        description={t('api_builder.operation_description')}
+                    />
+                </div>
+                <form
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        form.post(store.url([currentTeamSlug, dataSource.id]));
+                    }}
+                    className="space-y-6"
+                >
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                {t('api_builder.endpoint_step')}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid gap-5 md:grid-cols-2">
+                            <div className="grid gap-2">
+                                <Label>{t('api_builder.operation_name')}</Label>
+                                <Input
+                                    value={form.data.name}
+                                    onChange={(e) =>
+                                        form.setData('name', e.target.value)
+                                    }
+                                    required
+                                />
+                                <InputError message={form.errors.name} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>{t('api_builder.operation_key')}</Label>
+                                <Input
+                                    value={form.data.key}
+                                    onChange={(e) =>
+                                        form.setData('key', e.target.value)
+                                    }
+                                    placeholder="check-order"
+                                    required
+                                />
+                                <InputError message={form.errors.key} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>{t('api_builder.usage')}</Label>
+                                <Select
+                                    value={form.data.usage}
+                                    onValueChange={(value) => {
+                                        form.setData('usage', value);
+                                        form.setData(
+                                            'method',
+                                            value === 'synced'
+                                                ? 'GET'
+                                                : value === 'live_write'
+                                                  ? 'POST'
+                                                  : 'GET',
+                                        );
+                                    }}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="synced">
+                                            {t('api_builder.modes.synced')}
+                                        </SelectItem>
+                                        <SelectItem value="live_read">
+                                            {t('api_builder.modes.live_read')}
+                                        </SelectItem>
+                                        <SelectItem value="live_write">
+                                            {t('api_builder.modes.live_write')}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>{t('api_builder.method')}</Label>
+                                <Select
+                                    value={form.data.method}
+                                    onValueChange={(value) =>
+                                        form.setData('method', value)
+                                    }
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(form.data.usage === 'synced'
+                                            ? ['GET']
+                                            : form.data.usage === 'live_write'
+                                              ? [
+                                                    'POST',
+                                                    'PUT',
+                                                    'PATCH',
+                                                    'DELETE',
+                                                ]
+                                              : ['GET', 'POST']
+                                        ).map((method) => (
+                                            <SelectItem
+                                                key={method}
+                                                value={method}
+                                            >
+                                                {method}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid gap-2 md:col-span-2">
+                                <Label>{t('api_builder.path')}</Label>
+                                <Input
+                                    value={form.data.path}
+                                    onChange={(e) =>
+                                        form.setData('path', e.target.value)
+                                    }
+                                    placeholder="/orders/{order_id}"
+                                    required
+                                />
+                                <p className="text-sm text-muted-foreground">
+                                    {t('api_builder.path_help')}
+                                </p>
+                                <InputError message={form.errors.path} />
+                            </div>
+                            {form.data.usage === 'synced' ? (
+                                <div className="grid gap-2 md:col-span-2">
+                                    <Label>
+                                        {t('api_builder.records_path')}
+                                    </Label>
+                                    <Input
+                                        value={form.data.records_path}
+                                        onChange={(e) =>
+                                            form.setData(
+                                                'records_path',
+                                                e.target.value,
+                                            )
+                                        }
+                                        placeholder="data.products"
+                                    />
+                                    <InputError
+                                        message={form.errors.records_path}
+                                    />
+                                </div>
+                            ) : null}
+                            <div className="grid gap-2">
+                                <Label>{t('api_builder.capability')}</Label>
+                                <Input
+                                    value={form.data.capability}
+                                    onChange={(e) =>
+                                        form.setData(
+                                            'capability',
+                                            e.target.value,
+                                        )
+                                    }
+                                    placeholder="check_order_status"
+                                />
+                                <p className="text-sm text-muted-foreground">
+                                    {t('api_builder.capability_help')}
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    {templateContext?.botId && form.data.capability ? (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>
+                                    {t('api_builder.capability_mapping')}
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <p className="text-sm text-muted-foreground">
+                                    {t('api_builder.capability_mapping_help')}
+                                </p>
+                                {form.data.input_mapping.map((row, index) => (
+                                    <div
+                                        key={`mapping-${index}`}
+                                        className="grid gap-3 rounded-lg border p-3 md:grid-cols-6"
+                                    >
+                                        <Input
+                                            value={row.model_input}
+                                            placeholder={t(
+                                                'api_builder.tool_input',
+                                            )}
+                                            onChange={(event) =>
+                                                updateInputMapping(
+                                                    index,
+                                                    'model_input',
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                        <Select
+                                            value={row.source}
+                                            onValueChange={(
+                                                value: InputMappingRow['source'],
+                                            ) =>
+                                                updateInputMapping(
+                                                    index,
+                                                    'source',
+                                                    value,
+                                                )
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="model_input">
+                                                    {t(
+                                                        'api_builder.tool_argument',
+                                                    )}
+                                                </SelectItem>
+                                                <SelectItem value="dataset_field">
+                                                    {t(
+                                                        'api_builder.dataset_field',
+                                                    )}
+                                                </SelectItem>
+                                                <SelectItem value="context_value">
+                                                    {t(
+                                                        'api_builder.context_value',
+                                                    )}
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        {row.source === 'dataset_field' ? (
+                                            <Input
+                                                value={row.dataset_field}
+                                                placeholder={t(
+                                                    'api_builder.dataset_field_key',
+                                                )}
+                                                onChange={(event) =>
+                                                    updateInputMapping(
+                                                        index,
+                                                        'dataset_field',
+                                                        event.target.value,
+                                                    )
+                                                }
+                                            />
+                                        ) : row.source === 'context_value' ? (
+                                            <Input
+                                                value={row.context_key}
+                                                placeholder={t(
+                                                    'api_builder.context_key',
+                                                )}
+                                                onChange={(event) =>
+                                                    updateInputMapping(
+                                                        index,
+                                                        'context_key',
+                                                        event.target.value,
+                                                    )
+                                                }
+                                            />
+                                        ) : (
+                                            <div />
+                                        )}
+                                        <Input
+                                            value={row.operation_argument}
+                                            placeholder={t(
+                                                'api_builder.api_argument',
+                                            )}
+                                            onChange={(event) =>
+                                                updateInputMapping(
+                                                    index,
+                                                    'operation_argument',
+                                                    event.target.value,
+                                                )
+                                            }
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            aria-label={t('common.remove')}
+                                            onClick={() =>
+                                                form.setData(
+                                                    'input_mapping',
+                                                    form.data.input_mapping.filter(
+                                                        (_, i) => i !== index,
+                                                    ),
+                                                )
+                                            }
+                                        >
+                                            <Trash2 />
+                                        </Button>
+                                    </div>
+                                ))}
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() =>
+                                        form.setData('input_mapping', [
+                                            ...form.data.input_mapping,
+                                            emptyInputMapping(),
+                                        ])
+                                    }
+                                >
+                                    <Plus /> {t('api_builder.add_mapping')}
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    ) : null}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                {t('api_builder.operation_headers')}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <p className="text-sm text-muted-foreground">
+                                {t('api_builder.operation_headers_help')}
+                            </p>
+                            {form.data.headers.map((row, index) => (
+                                <div
+                                    key={`header-${index}`}
+                                    className="flex gap-2"
+                                >
+                                    <Input
+                                        value={row.name}
+                                        placeholder={t(
+                                            'api_builder.header_name',
+                                        )}
+                                        onChange={(event) =>
+                                            updateHeader(
+                                                index,
+                                                'name',
+                                                event.target.value,
+                                            )
+                                        }
+                                    />
+                                    <Input
+                                        value={row.value}
+                                        placeholder={t(
+                                            'api_builder.header_value',
+                                        )}
+                                        onChange={(event) =>
+                                            updateHeader(
+                                                index,
+                                                'value',
+                                                event.target.value,
+                                            )
+                                        }
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        aria-label={t('common.remove')}
+                                        onClick={() =>
+                                            form.setData(
+                                                'headers',
+                                                form.data.headers.filter(
+                                                    (_, i) => i !== index,
+                                                ),
+                                            )
+                                        }
+                                    >
+                                        <Trash2 />
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                    form.setData('headers', [
+                                        ...form.data.headers,
+                                        emptyKeyValue(),
+                                    ])
+                                }
+                            >
+                                <Plus /> {t('api_builder.add_header')}
+                            </Button>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                {t('api_builder.request_mapping')}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            {(
+                                ['query_parameters', 'body_parameters'] as const
+                            ).map((section) => (
+                                <div key={section} className="space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p className="font-medium">
+                                                {section === 'query_parameters'
+                                                    ? t(
+                                                          'api_builder.query_parameters',
+                                                      )
+                                                    : t(
+                                                          'api_builder.body_fields',
+                                                      )}
+                                            </p>
+                                            <p className="text-sm text-muted-foreground">
+                                                {t('api_builder.mapping_help')}
+                                            </p>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                                addParameter(section)
+                                            }
+                                        >
+                                            <Plus />{' '}
+                                            {t('api_builder.add_mapping')}
+                                        </Button>
+                                    </div>
+                                    {form.data[section].map((row, index) => (
+                                        <div
+                                            key={`${section}-${index}`}
+                                            className="grid gap-3 rounded-lg border p-3 md:grid-cols-6"
+                                        >
+                                            <Input
+                                                className="md:col-span-2"
+                                                value={row.name}
+                                                placeholder={t(
+                                                    'api_builder.parameter_path',
+                                                )}
+                                                onChange={(event) =>
+                                                    updateParameter(
+                                                        section,
+                                                        index,
+                                                        'name',
+                                                        event.target.value,
+                                                    )
+                                                }
+                                            />
+                                            <Select
+                                                value={row.source}
+                                                onValueChange={(
+                                                    value: ParameterRow['source'],
+                                                ) =>
+                                                    updateParameter(
+                                                        section,
+                                                        index,
+                                                        'source',
+                                                        value,
+                                                    )
+                                                }
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="tool_argument">
+                                                        {t(
+                                                            'api_builder.tool_argument',
+                                                        )}
+                                                    </SelectItem>
+                                                    <SelectItem value="fixed">
+                                                        {t(
+                                                            'api_builder.fixed_value',
+                                                        )}
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            {row.source === 'fixed' ? (
+                                                <Input
+                                                    value={row.value}
+                                                    placeholder={t(
+                                                        'api_builder.configured_value',
+                                                    )}
+                                                    onChange={(event) =>
+                                                        updateParameter(
+                                                            section,
+                                                            index,
+                                                            'value',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                />
+                                            ) : (
+                                                <Input
+                                                    value={row.argument}
+                                                    placeholder={t(
+                                                        'api_builder.argument_name',
+                                                    )}
+                                                    onChange={(event) =>
+                                                        updateParameter(
+                                                            section,
+                                                            index,
+                                                            'argument',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                />
+                                            )}
+                                            <Select
+                                                value={row.type}
+                                                onValueChange={(
+                                                    value: ParameterRow['type'],
+                                                ) =>
+                                                    updateParameter(
+                                                        section,
+                                                        index,
+                                                        'type',
+                                                        value,
+                                                    )
+                                                }
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="string">
+                                                        String
+                                                    </SelectItem>
+                                                    <SelectItem value="integer">
+                                                        Integer
+                                                    </SelectItem>
+                                                    <SelectItem value="number">
+                                                        Number
+                                                    </SelectItem>
+                                                    <SelectItem value="boolean">
+                                                        Boolean
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                aria-label={t('common.remove')}
+                                                onClick={() =>
+                                                    removeParameter(
+                                                        section,
+                                                        index,
+                                                    )
+                                                }
+                                            >
+                                                <Trash2 />
+                                            </Button>
+                                            {row.source === 'tool_argument' ? (
+                                                <label className="flex items-center gap-2 text-sm md:col-span-6">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={row.required}
+                                                        onChange={(event) =>
+                                                            updateParameter(
+                                                                section,
+                                                                index,
+                                                                'required',
+                                                                event.target
+                                                                    .checked,
+                                                            )
+                                                        }
+                                                    />
+                                                    {t(
+                                                        'api_builder.required_argument',
+                                                    )}
+                                                </label>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                {t('api_builder.response_mapping')}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                            {form.data.usage === 'synced' ? (
+                                <div className="grid gap-2 md:max-w-sm">
+                                    <Label>
+                                        {t('api_builder.pagination_strategy')}
+                                    </Label>
+                                    <Select
+                                        value={String(
+                                            form.data.pagination.type ?? 'none',
+                                        )}
+                                        onValueChange={(value) =>
+                                            form.setData('pagination', {
+                                                ...form.data.pagination,
+                                                type: value,
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">
+                                                {t('api_builder.no_pagination')}
+                                            </SelectItem>
+                                            <SelectItem value="page">
+                                                {t(
+                                                    'api_builder.page_pagination',
+                                                )}
+                                            </SelectItem>
+                                            <SelectItem value="next_url">
+                                                {t(
+                                                    'api_builder.next_url_pagination',
+                                                )}
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p className="font-medium">
+                                                {t(
+                                                    'api_builder.safe_output_fields',
+                                                )}
+                                            </p>
+                                            <p className="text-sm text-muted-foreground">
+                                                {t('api_builder.output_help')}
+                                            </p>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                                form.setData(
+                                                    'response_fields',
+                                                    [
+                                                        ...form.data
+                                                            .response_fields,
+                                                        emptyResponseField(),
+                                                    ],
+                                                )
+                                            }
+                                        >
+                                            <Plus />{' '}
+                                            {t('api_builder.add_mapping')}
+                                        </Button>
+                                    </div>
+                                    {form.data.response_fields.map(
+                                        (field, index) => (
+                                            <div
+                                                key={`response-${index}`}
+                                                className="grid gap-3 rounded-lg border p-3 md:grid-cols-5"
+                                            >
+                                                <Input
+                                                    value={field.name}
+                                                    placeholder={t(
+                                                        'api_builder.output_name',
+                                                    )}
+                                                    onChange={(event) =>
+                                                        updateResponseField(
+                                                            index,
+                                                            'name',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                />
+                                                <Input
+                                                    className="md:col-span-2"
+                                                    value={field.path}
+                                                    placeholder={t(
+                                                        'api_builder.response_path',
+                                                    )}
+                                                    onChange={(event) =>
+                                                        updateResponseField(
+                                                            index,
+                                                            'path',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                />
+                                                <label className="flex items-center gap-2 text-sm">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={field.required}
+                                                        onChange={(event) =>
+                                                            updateResponseField(
+                                                                index,
+                                                                'required',
+                                                                event.target
+                                                                    .checked,
+                                                            )
+                                                        }
+                                                    />
+                                                    {t('common.required')}
+                                                </label>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    aria-label={t(
+                                                        'common.remove',
+                                                    )}
+                                                    onClick={() =>
+                                                        form.setData(
+                                                            'response_fields',
+                                                            form.data.response_fields.filter(
+                                                                (_, i) =>
+                                                                    i !== index,
+                                                            ),
+                                                        )
+                                                    }
+                                                >
+                                                    <Trash2 />
+                                                </Button>
+                                            </div>
+                                        ),
+                                    )}
+                                </div>
+                            )}
+                            {pathArguments.length > 0 ? (
+                                <div className="space-y-3">
+                                    <p className="font-medium">
+                                        {t('api_builder.path_test_values')}
+                                    </p>
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        {pathArguments.map((argument) => (
+                                            <div
+                                                key={argument}
+                                                className="grid gap-2"
+                                            >
+                                                <Label>{argument}</Label>
+                                                <Input
+                                                    value={String(
+                                                        (
+                                                            form.data
+                                                                .test_arguments as Record<
+                                                                string,
+                                                                unknown
+                                                            >
+                                                        )[argument] ?? '',
+                                                    )}
+                                                    onChange={(event) =>
+                                                        form.setData(
+                                                            'test_arguments',
+                                                            {
+                                                                ...form.data
+                                                                    .test_arguments,
+                                                                [argument]:
+                                                                    event.target
+                                                                        .value,
+                                                            },
+                                                        )
+                                                    }
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                {t('api_builder.test_request')}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <p className="text-sm text-muted-foreground">
+                                {form.data.usage === 'live_write'
+                                    ? t('api_builder.write_test_help')
+                                    : t('api_builder.test_request_help')}
+                            </p>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={runTest}
+                                disabled={testing}
+                            >
+                                <FlaskConical />
+                                {testing
+                                    ? t('common.loading')
+                                    : form.data.usage === 'live_write'
+                                      ? t('api_builder.preview_request')
+                                      : t('api_builder.test_request')}
+                            </Button>
+                            {preview ? (
+                                <pre className="max-h-72 overflow-auto rounded-lg border bg-muted/20 p-4 text-xs">
+                                    {JSON.stringify(preview, null, 2)}
+                                </pre>
+                            ) : null}
+                        </CardContent>
+                    </Card>
+                    <div className="flex gap-3">
+                        <Button type="submit" disabled={form.processing}>
+                            {form.processing
+                                ? t('common.saving')
+                                : t('api_builder.save_operation')}
+                        </Button>
+                        <Button variant="ghost" asChild>
+                            <Link
+                                href={create.url([
+                                    currentTeamSlug,
+                                    dataSource.id,
+                                ])}
+                            >
+                                {t('common.cancel')}
+                            </Link>
+                        </Button>
+                    </div>
+                </form>
+            </div>
+        </>
+    );
+}

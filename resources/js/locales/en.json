@@ -1,0 +1,963 @@
+{
+    "common": {
+        "language": "Language",
+        "save": "Save",
+        "saving": "Saving...",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "deleting": "Deleting...",
+        "edit": "Edit",
+        "create": "Create",
+        "close": "Close",
+        "confirm": "Confirm",
+        "search": "Search",
+        "filter": "Filter",
+        "reset": "Reset",
+        "loading": "Loading",
+        "retry": "Retry",
+        "back": "Back",
+        "next": "Next",
+        "previous": "Previous",
+        "actions": "Actions",
+        "status": "Status",
+        "name": "Name",
+        "description": "Description",
+        "email": "Email",
+        "customer": "Customer",
+        "customer_profile": "Customer profile",
+        "company": "Company",
+        "owner": "Owner",
+        "tags": "Tags",
+        "notes": "Notes",
+        "activity": "Activity",
+        "add_customer": "Add customer",
+        "edit_customer": "Edit customer",
+        "no_customer_linked": "No customer linked",
+        "linked_customer": "Linked customer",
+        "team": "Team",
+        "settings": "Settings",
+        "profile": "Profile",
+        "security": "Security",
+        "appearance": "Appearance",
+        "teams": "Teams",
+        "log_out": "Log out",
+        "select_team": "Select team",
+        "new_team": "New team",
+        "repository": "Repository",
+        "documentation": "Documentation",
+        "light": "Light",
+        "dark": "Dark",
+        "system": "System",
+        "yes": "Yes",
+        "no": "No",
+        "apply": "Apply",
+        "update": "Update",
+        "upload": "Upload",
+        "import": "Import",
+        "run": "Run",
+        "view": "View",
+        "all": "All",
+        "none": "None",
+        "type": "Type",
+        "url": "URL",
+        "token": "Token",
+        "secret": "Secret",
+        "username": "Username",
+        "password": "Password",
+        "updated": "Updated",
+        "created": "Created",
+        "platform": "Platform",
+        "page": "Page",
+        "showing_of": "Showing {{from}}–{{to}} of {{total}}",
+        "show_password": "Show password",
+        "hide_password": "Hide password",
+        "create_bot": "Create Bot",
+        "manage_team_bots": "Manage the assistants belonging to your current team.",
+        "manage_team_sources": "Manage the sources belonging to your current team.",
+        "rest_api": "REST API",
+        "graphql_api": "GraphQL API",
+        "uploaded_file": "Uploaded file",
+        "define_team_collections": "Define searchable collections for your current team.",
+        "use_template": "Use a template",
+        "create_data_source": "Create data source",
+        "create_dataset": "Create dataset",
+        "create_workflow": "Create workflow",
+        "no_bots": "No Bots yet",
+        "no_data_sources": "No data sources yet",
+        "no_datasets": "No datasets yet",
+        "no_workflows": "No workflows yet",
+        "no_appointments": "No appointments found",
+        "upcoming": "Upcoming",
+        "review_appointments": "Review confirmed appointments created by your Bots.",
+        "confirmed_bookings_empty": "Confirmed customer bookings will appear here.",
+        "no_email": "No email provided",
+        "filter_by_bot": "Filter by Bot",
+        "filter_by_status": "Filter by status",
+        "filter_by_data_source": "Filter by data source",
+        "filter_by_health": "Filter by health",
+        "previous_page": "Previous",
+        "next_page": "Next",
+        "pagination": "Pagination",
+        "back_to": "Back to {{resource}}",
+        "overview": "Overview",
+        "details": "Details",
+        "source_files": "Source files",
+        "recent_runs": "Recent runs",
+        "recent_failures": "Recent failures",
+        "import_history": "Import history",
+        "data_source": "Data source",
+        "dataset": "Dataset",
+        "bot": "Bot",
+        "appointment": "Appointment",
+        "starts": "Starts",
+        "all_bots": "All Bots",
+        "all_data_sources": "All data sources",
+        "all_statuses": "All statuses",
+        "no_show": "No show",
+        "scheduled": "Scheduled",
+        "today": "Today",
+        "last_7_days": "Last 7 days",
+        "last_30_days": "Last 30 days",
+        "last_90_days": "Last 90 days",
+        "all_time": "All time",
+        "set_up_first_assistant": "Set up your first AI assistant",
+        "set_up_another_assistant": "Set up another assistant",
+        "setup_description": "Start with a business template or build your Bot from scratch.",
+        "start_setup": "Start setup",
+        "close_sidebar": "Close sidebar",
+        "toggle_sidebar": "Toggle sidebar",
+        "more": "More",
+        "select_option": "Select an option",
+        "select_data_source": "Select a data source",
+        "select_source_type": "Select a source type",
+        "optional": "Optional",
+        "remove": "Remove",
+        "warning_title": "Warning",
+        "are_you_sure": "Are you sure?",
+        "invite_member": "Invite a team member",
+        "email_address": "Email address",
+        "full_name": "Full name",
+        "role": "Role",
+        "select_role": "Select a role",
+        "team_name": "Team name",
+        "team_members": "Team members",
+        "view_team": "View team",
+        "leave_team": "Leave team",
+        "cancel_invitation": "Cancel invitation",
+        "delete_question": "Delete {{resource}}?",
+        "unread": "Unread",
+        "total": "Total",
+        "all_notifications": "All",
+        "mark_all_read": "Mark all as read",
+        "mark_read": "Mark read",
+        "mark_unread": "Mark unread",
+        "caught_up": "You're all caught up.",
+        "no_notifications": "No notifications yet",
+        "activity_description": "Important activity from your Bots and integrations will appear here.",
+        "no_items": "No items yet.",
+        "no_results": "No results found.",
+        "conversation_count_one": "{{count}} conversation",
+        "conversation_count_few": "{{count}} conversations",
+        "conversation_count_many": "{{count}} conversations",
+        "conversation_count_other": "{{count}} conversations",
+        "records": "Records",
+        "add_record": "Add record",
+        "edit_record": "Edit record",
+        "manual": "Manual",
+        "synced": "Synced",
+        "source": "Source",
+        "file_import": "File import",
+        "identifier": "Identifier",
+        "fields": "Fields",
+        "total_records": "total records",
+        "active_records": "active records",
+        "search_records": "Search by identifier or mapped value...",
+        "source_managed": "This record is managed by an external source.",
+        "overwrite_warning": "Changes may be overwritten during the next sync.",
+        "deactivate": "Deactivate",
+        "activate": "Activate",
+        "source_updated": "Source updated",
+        "raw_data": "Raw normalized data",
+        "no_records": "No records found.",
+        "delete_confirm": "Delete this manual record?"
+    },
+    "navigation": {
+        "home": "Home",
+        "ai_assistant": "AI Assistant",
+        "inbox_customers": "Inbox & Customers",
+        "insights_health": "Insights & Health",
+        "account": "Account",
+        "dashboard": "Dashboard",
+        "bots": "Bots",
+        "data_sources": "Data Sources",
+        "datasets": "Datasets",
+        "billing": "Billing",
+        "analytics": "Analytics",
+        "conversations": "Conversations",
+        "customers": "Customers",
+        "leads": "Leads",
+        "deals": "Deals",
+        "tasks": "Tasks",
+        "appointments": "Appointments",
+        "support_tickets": "Support Tickets",
+        "workflows": "Workflows",
+        "notifications": "Notifications",
+        "knowledge_gaps": "Knowledge Gaps",
+        "action_history": "Action History",
+        "integration_health": "Integration Health",
+        "data_health": "Data Health",
+        "ai_improvements": "AI Improvements",
+        "bot_testing": "Bot Testing",
+        "channels": "Channels",
+        "onboarding": "Onboarding"
+    },
+    "settings": {
+        "title": "Settings",
+        "description": "Manage your profile and account settings",
+        "language_description": "Choose the language used for your dashboard.",
+        "save_language": "Save language",
+        "language_saved": "Language saved",
+        "profile_settings": "Profile settings",
+        "security_settings": "Security settings",
+        "appearance_settings": "Appearance settings",
+        "appearance_description": "Update the appearance settings for your account",
+        "profile_description": "Update your name and email address",
+        "email_unverified": "Your email address is unverified.",
+        "resend_verification": "Click here to re-send the verification email.",
+        "verification_sent": "A new verification link has been sent to your email address."
+    },
+    "status": {
+        "draft": "Draft",
+        "ready": "Ready",
+        "published": "Published",
+        "disabled": "Disabled",
+        "active": "Active",
+        "inactive": "Inactive",
+        "open": "Open",
+        "pending": "Pending",
+        "resolved": "Resolved",
+        "closed": "Closed",
+        "failed": "Failed",
+        "completed": "Completed",
+        "processing": "Processing",
+        "error": "Error",
+        "success": "Success",
+        "cancelled": "Cancelled",
+        "syncing": "Syncing",
+        "preparing": "Preparing",
+        "indexing": "Indexing",
+        "booked": "Booked",
+        "confirmed": "Confirmed",
+        "new": "New",
+        "contacted": "Contacted",
+        "qualified": "Qualified",
+        "converted": "Converted",
+        "lost": "Lost",
+        "ignored": "Ignored",
+        "healthy": "Healthy",
+        "warning": "Warning"
+    },
+    "billing": {
+        "title": "Billing",
+        "create_workspace": "Create a new workspace",
+        "workspace_name": "Workspace name",
+        "select_plan": "Select a plan",
+        "continue_to_payment": "Continue to payment",
+        "workspace_activation_pending": "Workspace activation pending",
+        "workspace_created": "Workspace created",
+        "payment_not_completed": "Payment not completed",
+        "refresh_status": "Refresh status",
+        "try_payment_again": "Try payment again",
+        "current_plan": "Current plan",
+        "usage": "Usage",
+        "manage_subscription": "Manage subscription",
+        "upgrade": "Upgrade",
+        "downgrade": "Downgrade",
+        "cancel_subscription": "Cancel subscription",
+        "resume_subscription": "Resume subscription",
+        "renews_on": "Renews on",
+        "cancels_on": "Cancels on",
+        "payment_failed": "Payment failed",
+        "description": "Review your Team plan, entitlements, and current usage.",
+        "provider_payments": "Provider-managed payments",
+        "stripe_available": "Stripe billing available",
+        "billing_unavailable": "Billing not configured",
+        "team_members": "Team members",
+        "customer_conversations": "Customer conversations",
+        "production_actions": "Production actions",
+        "unlimited": "Unlimited",
+        "choose_plan": "Choose plan",
+        "change_plan": "Change plan",
+        "limit_reached": "Limit reached",
+        "approaching_limit": "Approaching limit",
+        "within_plan": "Within plan",
+        "unlimited_for_plan": "Unlimited for this plan.",
+        "period_limit": "{{percentage}}% of the current period limit.",
+        "plan_comparison": "Plan comparison",
+        "plan_registry_note": "Plan limits and features come from the server registry. Stripe prices are resolved server-side.",
+        "manage_billing": "Manage billing",
+        "cancel_at_period_end": "Cancel at period end",
+        "usage_label": "Usage — {{period}}"
+    },
+    "dashboard": {
+        "good_morning": "Good morning",
+        "good_afternoon": "Good afternoon",
+        "good_evening": "Good evening",
+        "attention_description": "Here's what needs your attention today.",
+        "setup_title": "Get your assistant ready",
+        "metrics": {
+            "conversations": "Conversations",
+            "leads": "Leads",
+            "successful_actions": "Successful actions",
+            "handoffs": "Human handoffs"
+        },
+        "no_comparison": "No previous-period comparison",
+        "vs_previous": "vs previous period",
+        "needs_attention": "Needs attention",
+        "everything_good": "Everything looks good.",
+        "attention": {
+            "handoffs": "Handoffs waiting",
+            "failed_actions": "Failed actions",
+            "failed_imports": "Failed imports",
+            "unassigned": "Unassigned open conversations",
+            "integration_failures": "Integration failures"
+        },
+        "system_health": "System health",
+        "health": {
+            "bots": "Bots",
+            "data": "Data",
+            "integrations": "Integrations",
+            "channels": "Channels"
+        },
+        "conversation_activity": "Conversation activity",
+        "recent_conversations": "Recent conversations",
+        "no_conversations": "No production conversations in this period.",
+        "ai_improvements": "AI improvement opportunities",
+        "no_improvements": "No improvement opportunities yet.",
+        "improvement_opportunity": "Review this improvement opportunity.",
+        "view_improvements": "View AI improvements",
+        "business_outcomes": "Business outcomes",
+        "outcomes": {
+            "leads": "Leads captured",
+            "appointments": "Appointments booked",
+            "tickets": "Support tickets",
+            "completed_actions": "Completed actions"
+        },
+        "workspace_summary": "Workspace summary",
+        "notifications": "Unread notifications",
+        "billing_usage": "Billing usage",
+        "quick_actions": "Quick actions",
+        "actions": {
+            "create_bot": "Create Bot",
+            "add_data_source": "Add Data Source",
+            "run_bot_test": "Run Bot Test",
+            "configure_channel": "Configure Channel",
+            "open_inbox": "Open Inbox"
+        },
+        "steps": {
+            "bot": "Create your first Bot",
+            "data": "Connect your data",
+            "capabilities": "Configure capabilities",
+            "tests": "Run a Bot test",
+            "design": "Customize appearance",
+            "domain": "Add a website domain",
+            "embed": "Prepare the widget"
+        }
+    },
+    "templates": {
+        "setup": {
+            "title": "Setup",
+            "index_description": "Choose a business starting point. Review what the assistant needs before creating a draft.",
+            "overview": "Setup overview",
+            "overview_description": "Each item explains whether information should be synced, fetched live, or connected as an action.",
+            "why": "Why it matters",
+            "create_title": "Create an assistant draft",
+            "create_description": "Applying a template creates a draft Bot and opens this actionable setup plan.",
+            "safe_scaffolding": "Safe setup scaffolding",
+            "safe_scaffolding_description": "No sample records, credentials, API operations, channels, or workflows are created automatically.",
+            "bot_name": "Assistant name",
+            "channels": "Channels",
+            "channels_description": "Connect only the channels you want to launch.",
+            "suggested_fields": "Suggested fields",
+            "launch_readiness": "Launch readiness",
+            "progress_summary": "{{completed}} of {{total}} required items ready",
+            "optional_does_not_block": "Recommended and optional items improve the assistant but do not block launch readiness.",
+            "custom_description": "Custom Bots are not forced into a business template. Configure the resources that fit your use case.",
+            "automation_description": "These are recommendations only. Review and create workflows when you are ready.",
+            "no_recommendations": "No recommendations for this template.",
+            "testing_title": "Testing and launch",
+            "testing_description": "Use these suggested questions as a starting point for saved Bot tests.",
+            "safety_note": "Template guidance is trusted metadata. It never fabricates records, credentials, integrations, workflows, or external availability.",
+            "steps": {
+                "data": {
+                    "title": "Connect data and knowledge",
+                    "description": "Add the synced knowledge and catalog sources your assistant should use."
+                },
+                "capabilities": {
+                    "title": "Configure live capabilities",
+                    "description": "Review the live reads and writes that need real API operations."
+                },
+                "tests": {
+                    "title": "Run a Bot test",
+                    "description": "Try representative customer questions before publishing."
+                },
+                "design": {
+                    "title": "Customize appearance",
+                    "description": "Adjust the widget and product cards for your brand."
+                },
+                "domain": {
+                    "title": "Add a website domain",
+                    "description": "Allow the domains where the assistant will be embedded."
+                },
+                "embed": {
+                    "title": "Prepare the widget",
+                    "description": "Use the embed code after the Bot and domain are ready."
+                }
+            }
+        },
+        "actions": {
+            "all_templates": "All templates",
+            "start_from_scratch": "Start from scratch",
+            "review_setup": "Review setup",
+            "create_dataset": "Create dataset",
+            "connect_data_source": "Connect source",
+            "configure_mapping": "Configure mapping",
+            "configure_live_api": "Configure live API",
+            "configure_write_api": "Configure write API",
+            "configure_channel": "Configure channel",
+            "open_capabilities": "Open capabilities",
+            "open_workflows": "Review workflows",
+            "run_bot_test": "Run Bot test",
+            "open_design": "Customize design",
+            "open_bot": "Open Bot",
+            "not_available": "Not available yet",
+            "creating": "Creating draft…",
+            "use_template": "Use this template"
+        },
+        "card": {
+            "supported_capabilities": "supported capabilities",
+            "core_setup": "Core setup requirements"
+        },
+        "importance": {
+            "required": "Required",
+            "recommended": "Recommended",
+            "optional": "Optional"
+        },
+        "data_modes": {
+            "synced": "Synced data",
+            "live": "Live API",
+            "hybrid": "Hybrid"
+        },
+        "support": {
+            "future_custom": "Future/custom integration",
+            "not_available_yet": "Not available yet"
+        },
+        "status": {
+            "not_configured": "Not configured",
+            "partially_configured": "Partially configured",
+            "ready": "Ready",
+            "unavailable": "Unavailable",
+            "dataset_not_connected": "No compatible dataset is attached.",
+            "dataset_needs_configuration": "The attached dataset is not ready yet.",
+            "capability_not_ready": "The required capability is not ready.",
+            "api_not_configured": "A matching API operation is not configured.",
+            "channel_not_configured": "This channel is not connected yet.",
+            "connected": "Connected and ready.",
+            "workflow_not_configured": "Review and create this workflow when ready.",
+            "future_custom": "This needs a future or custom integration."
+        },
+        "categories": {
+            "data_knowledge": "Data and knowledge",
+            "data_knowledge_description": "Synced sources for searchable information and business knowledge.",
+            "live_integrations": "Live integrations",
+            "live_integrations_description": "Fetch changing business data on demand instead of importing operational history.",
+            "actions": "Actions",
+            "actions_description": "Write operations change business state and must use a configured API.",
+            "automation": "Automation",
+            "automation_description": "Workflow recommendations are optional and are never created automatically.",
+            "channels": "Channels",
+            "channels_description": "Communication channels where customers can reach the assistant."
+        },
+        "requirement_copy": {
+            "knowledge": {
+                "description": "Synced knowledge that gives the assistant reliable business context.",
+                "why": "Keep relatively stable information searchable without requiring a live request."
+            },
+            "catalog": {
+                "description": "A searchable structured catalog with the fields needed for discovery and details.",
+                "why": "Keep the searchable base local while volatile fields can remain live."
+            },
+            "live_read": {
+                "description": "A read-only API operation that fetches changing information on demand.",
+                "why": "Avoid importing sensitive or fast-changing operational history."
+            },
+            "live_write": {
+                "description": "A write API operation that performs an external business action.",
+                "why": "Keep external changes behind an authorized operation and existing confirmation safety."
+            },
+            "workflow": {
+                "description": "A recommended internal automation for the team to review.",
+                "why": "Turn important customer events into consistent team follow-up."
+            },
+            "channel": {
+                "description": "A recommended customer communication channel.",
+                "why": "Give customers a clear way to reach the assistant."
+            }
+        },
+        "capabilities": {
+            "search_catalog": "Search catalog",
+            "get_product_details": "Product details",
+            "recommend_products": "Product recommendations",
+            "compare_products": "Compare products",
+            "lookup_faq": "FAQ and knowledge answers",
+            "check_stock": "Check stock",
+            "check_order_status": "Check order status",
+            "track_order": "Track order",
+            "get_shipping_info": "Get shipping information",
+            "add_to_cart": "Add to cart",
+            "capture_lead": "Capture lead",
+            "create_support_ticket": "Create support ticket",
+            "book_appointment": "Book appointment",
+            "get_store_locations": "Find locations",
+            "request_human_handoff": "Request human handoff"
+        },
+        "outcomes": {
+            "product_discovery": "Help customers discover products.",
+            "product_details": "Answer product detail questions.",
+            "recommendations": "Recommend relevant options.",
+            "comparison": "Compare products or listings.",
+            "policy_answers": "Answer policy and FAQ questions.",
+            "stock_checking": "Check current stock when connected.",
+            "order_tracking": "Check orders and shipment tracking.",
+            "cart_actions": "Support cart actions through an API.",
+            "lead_capture": "Capture purchase intent and support requests.",
+            "vehicle_discovery": "Help shoppers discover vehicles.",
+            "vehicle_comparison": "Compare vehicle options.",
+            "inventory_availability": "Check inventory availability.",
+            "test_drive_requests": "Collect test-drive requests.",
+            "lead_qualification": "Qualify sales leads.",
+            "trade_in_inquiry": "Collect trade-in inquiries for follow-up.",
+            "finance_faq": "Answer finance and ownership questions.",
+            "locations": "Share branch and service locations.",
+            "property_discovery": "Help people discover properties.",
+            "property_comparison": "Compare property options.",
+            "buyer_qualification": "Collect buyer or renter preferences.",
+            "viewing_requests": "Collect viewing requests.",
+            "office_information": "Share office information.",
+            "room_discovery": "Help guests explore room types.",
+            "hotel_information": "Answer hotel and amenity questions.",
+            "policies": "Answer guest policy questions.",
+            "availability": "Check availability when connected.",
+            "rates": "Show live rates when connected.",
+            "reservation_support": "Guide reservation requests and support.",
+            "service_information": "Share general clinic service information.",
+            "hours_locations": "Share hours and locations.",
+            "insurance_information": "Answer general insurance and billing questions.",
+            "preparation_information": "Share general preparation instructions.",
+            "appointment_booking": "Help guests request appointments.",
+            "support_escalation": "Escalate administrative support needs.",
+            "menu_discovery": "Help guests discover menu items.",
+            "menu_questions": "Answer general menu questions.",
+            "dietary_information": "Share provided dietary information.",
+            "restaurant_policies": "Answer restaurant policy questions.",
+            "reservation_requests": "Guide reservation requests.",
+            "documentation_search": "Search product documentation.",
+            "faq": "Answer frequently asked questions.",
+            "troubleshooting": "Guide documented troubleshooting.",
+            "support_tickets": "Create support tickets through an API.",
+            "human_escalation": "Escalate complex requests to a person.",
+            "service_status": "Share status information when connected."
+        },
+        "ecommerce": {
+            "name": "E-commerce",
+            "description": "A practical assistant for product discovery, support, and connected commerce actions.",
+            "best_for": "Online stores, catalogs, customer questions, and live commerce APIs."
+        },
+        "car_dealership": {
+            "name": "Car dealership",
+            "description": "A vehicle assistant for inventory discovery, comparisons, and sales follow-up.",
+            "best_for": "Dealership inventory, test drives, FAQs, and sales leads."
+        },
+        "real_estate": {
+            "name": "Real estate",
+            "description": "A property assistant for discovery, qualification, and viewing requests.",
+            "best_for": "Property listings, buyer or renter questions, and office follow-up."
+        },
+        "hotel": {
+            "name": "Hotel",
+            "description": "A guest assistant for room information, policies, and connected availability.",
+            "best_for": "Room types, hotel information, guest support, and future reservation integrations."
+        },
+        "clinic": {
+            "name": "Clinic",
+            "description": "An administrative clinic assistant for services, general information, and appointments.",
+            "best_for": "Non-diagnostic patient information, locations, and appointment requests."
+        },
+        "restaurant": {
+            "name": "Restaurant",
+            "description": "A restaurant assistant for menu discovery, general questions, and locations.",
+            "best_for": "Menus, restaurant policies, locations, and future reservation integrations."
+        },
+        "saas_support": {
+            "name": "SaaS / Support",
+            "description": "A support assistant for documentation, troubleshooting, tickets, and escalation.",
+            "best_for": "Help centers, product documentation, support teams, and customer self-service."
+        },
+        "custom": {
+            "name": "Custom setup",
+            "description": "Configure this Bot using the resources that fit your business.",
+            "best_for": "Teams starting from scratch or customizing an existing Bot."
+        },
+        "requirements": {
+            "products": {
+                "title": "Products"
+            },
+            "policies": {
+                "title": "Policies"
+            },
+            "inventory": {
+                "title": "Inventory"
+            },
+            "orders": {
+                "title": "Orders"
+            },
+            "tracking": {
+                "title": "Tracking"
+            },
+            "shipping": {
+                "title": "Shipping"
+            },
+            "cart": {
+                "title": "Cart"
+            },
+            "lead_capture": {
+                "title": "Lead Capture"
+            },
+            "support_ticket": {
+                "title": "Support Ticket"
+            },
+            "lead_notification": {
+                "title": "Lead Notification"
+            },
+            "support_notification": {
+                "title": "Support Notification"
+            },
+            "handoff_notification": {
+                "title": "Handoff Notification"
+            },
+            "website": {
+                "title": "Website"
+            },
+            "whatsapp": {
+                "title": "Whatsapp"
+            },
+            "vehicles": {
+                "title": "Vehicles"
+            },
+            "vehicle_availability": {
+                "title": "Vehicle Availability"
+            },
+            "dealership_faq": {
+                "title": "Dealership Faq"
+            },
+            "locations": {
+                "title": "Locations"
+            },
+            "test_drive": {
+                "title": "Test Drive"
+            },
+            "test_drive_notification": {
+                "title": "Test Drive Notification"
+            },
+            "trade_in": {
+                "title": "Trade In"
+            },
+            "properties": {
+                "title": "Properties"
+            },
+            "listing_status": {
+                "title": "Listing Status"
+            },
+            "real_estate_faq": {
+                "title": "Real Estate Faq"
+            },
+            "viewing_booking": {
+                "title": "Viewing Booking"
+            },
+            "viewing_notification": {
+                "title": "Viewing Notification"
+            },
+            "lead_qualification": {
+                "title": "Lead Qualification"
+            },
+            "office_locations": {
+                "title": "Office Locations"
+            },
+            "rooms": {
+                "title": "Rooms"
+            },
+            "hotel_information": {
+                "title": "Hotel Information"
+            },
+            "availability": {
+                "title": "Availability"
+            },
+            "rates": {
+                "title": "Rates"
+            },
+            "reservation": {
+                "title": "Reservation"
+            },
+            "reservation_lookup": {
+                "title": "Reservation Lookup"
+            },
+            "reservation_notification": {
+                "title": "Reservation Notification"
+            },
+            "services": {
+                "title": "Services"
+            },
+            "clinic_faq": {
+                "title": "Clinic Faq"
+            },
+            "clinic_locations": {
+                "title": "Clinic Locations"
+            },
+            "appointment_slots": {
+                "title": "Appointment Slots"
+            },
+            "appointment_booking": {
+                "title": "Appointment Booking"
+            },
+            "patient_intake": {
+                "title": "Patient Intake"
+            },
+            "appointment_notification": {
+                "title": "Appointment Notification"
+            },
+            "menu": {
+                "title": "Menu"
+            },
+            "restaurant_faq": {
+                "title": "Restaurant Faq"
+            },
+            "restaurant_locations": {
+                "title": "Restaurant Locations"
+            },
+            "table_availability": {
+                "title": "Table Availability"
+            },
+            "table_reservation": {
+                "title": "Table Reservation"
+            },
+            "instagram": {
+                "title": "Instagram"
+            },
+            "help_center": {
+                "title": "Help Center"
+            },
+            "support_faq": {
+                "title": "Support Faq"
+            },
+            "documentation": {
+                "title": "Documentation"
+            },
+            "account_lookup": {
+                "title": "Account Lookup"
+            },
+            "service_status": {
+                "title": "Service Status"
+            },
+            "email": {
+                "title": "Email"
+            }
+        },
+        "tests": {
+            "ecommerce": {
+                "product_search": "Find me a product under $100.",
+                "policy": "What is your return policy?",
+                "stock": "Is this item in stock?"
+            },
+            "car_dealership": {
+                "vehicle_search": "Show me SUVs under my budget.",
+                "test_drive": "I want to request a test drive."
+            },
+            "real_estate": {
+                "property_search": "Find apartments in my preferred area.",
+                "lead": "I want to speak with an agent."
+            },
+            "hotel": {
+                "room_information": "What room types and amenities do you offer?",
+                "policies": "What time is check-in?"
+            },
+            "clinic": {
+                "service_information": "What services do you offer?",
+                "appointment": "I want to request an appointment."
+            },
+            "restaurant": {
+                "menu": "What is on the menu?",
+                "policies": "Are you open today?"
+            },
+            "saas_support": {
+                "documentation": "How do I configure this feature?",
+                "ticket": "I need help from support."
+            }
+        }
+    },
+    "data_source_chooser": {
+        "title": "Add data source",
+        "description": "Choose where your team's data comes from.",
+        "continue": "Continue",
+        "file_title": "Upload a file",
+        "file_description": "CSV, JSON, or XLSX",
+        "file_help": "Best for manual uploads and one-off imports.",
+        "api_title": "Connect a REST API",
+        "api_description": "Sync or fetch live data",
+        "api_help": "Best for connected systems and frequently changing data.",
+        "graphql_title": "Connect a GraphQL API",
+        "graphql_description": "Query and sync data with GraphQL documents.",
+        "graphql_help": "Best for APIs that use GraphQL queries and mutations.",
+        "advanced": "Advanced configuration",
+        "advanced_help": "Most users do not need this. Unknown legacy settings are preserved safely.",
+        "invalid_json": "Advanced configuration must be a JSON object."
+    },
+    "api_builder": {
+        "connection_title": "Connect REST API",
+        "connection_description": "Configure a reusable API connection without editing JSON.",
+        "connection_step": "Connection",
+        "endpoint_step": "Endpoint",
+        "base_url": "Base URL",
+        "authentication": "Authentication",
+        "token": "Token",
+        "configured_placeholder": "Configured — leave blank to keep it",
+        "key_name": "Key name",
+        "key_placement": "Key placement",
+        "key_value": "Key value",
+        "header_name": "Header name",
+        "header_value": "Header value",
+        "username": "Username",
+        "password": "Password",
+        "default_headers": "Default headers",
+        "default_query": "Default query parameters",
+        "parameter_name": "Parameter name",
+        "parameter_value": "Parameter value",
+        "add_header": "Add header",
+        "add_parameter": "Add parameter",
+        "header": "Header",
+        "query_parameter": "Query parameter",
+        "test_connection": "Test connection",
+        "test_connection_help": "This sends a bounded safe request to the configured base URL. Secrets are never shown.",
+        "safe_preview": "Safe response preview",
+        "connection_failed": "The connection could not be tested safely.",
+        "save_connection": "Save connection",
+        "operation_title": "Configure API operation",
+        "operation_description": "Define how this connection is used for synced data, live reads, or actions.",
+        "operation_name": "Operation name",
+        "operation_key": "Operation key",
+        "usage": "Usage",
+        "method": "Method",
+        "path": "Endpoint path",
+        "path_help": "Use placeholders such as /orders/{order_id}; they become required arguments automatically.",
+        "records_path": "Records path",
+        "capability": "Assistant capability",
+        "capability_help": "Use a supported capability key only when this operation is intended for an assistant tool.",
+        "test_request": "Test request",
+        "test_request_help": "Read-only operations may send a bounded request and show a safe response preview.",
+        "write_test_help": "Write operations are previewed only. Setup never sends a real mutation.",
+        "preview_request": "Preview request",
+        "save_operation": "Save operation",
+        "context": "Setup context",
+        "context_for": "Configuring",
+        "request_mapping": "Request mapping",
+        "query_parameters": "Query parameters",
+        "body_fields": "JSON body fields",
+        "mapping_help": "Map a tool argument or keep a fixed setup value.",
+        "parameter_path": "Parameter or body.path",
+        "tool_argument": "Tool argument",
+        "fixed_value": "Fixed value",
+        "configured_value": "Configured value",
+        "argument_name": "Argument name",
+        "required_argument": "Required argument",
+        "response_mapping": "Response mapping and pagination",
+        "pagination_strategy": "Pagination strategy",
+        "no_pagination": "No pagination",
+        "page_pagination": "Page and limit",
+        "next_url_pagination": "Next URL",
+        "safe_output_fields": "Safe output fields",
+        "output_help": "Only mapped response fields are exposed to the assistant.",
+        "output_name": "Output name",
+        "response_path": "Response path",
+        "path_test_values": "Test values for path arguments",
+        "capability_mapping": "Capability input mapping",
+        "capability_mapping_help": "Map this operation to the selected capability. Context values are resolved only from the active conversation and are never accepted from the browser.",
+        "tool_input": "Tool input",
+        "dataset_field": "Dataset field",
+        "dataset_field_key": "Dataset field key",
+        "context_value": "Context value",
+        "context_key": "Context key",
+        "api_argument": "API argument",
+        "add_mapping": "Add mapping",
+        "operation_headers": "Operation headers",
+        "operation_headers_help": "Add non-secret headers for this endpoint. Authentication remains managed by the connection.",
+        "auth": {
+            "none": "No authentication",
+            "bearer": "Bearer token",
+            "api_key": "API key",
+            "basic": "Basic auth",
+            "custom_header": "Custom header"
+        },
+        "modes": {
+            "synced": "Synced searchable data",
+            "live_read": "Live information",
+            "live_write": "Perform an action"
+        }
+    },
+    "graphql_builder": {
+        "connection_title": "Connect GraphQL API",
+        "connection_description": "Configure a reusable GraphQL endpoint and its authentication.",
+        "endpoint": "GraphQL endpoint",
+        "default_variables": "Default variables",
+        "save_connection": "Save GraphQL connection",
+        "operation_title": "Configure GraphQL operation",
+        "operation_description": "Define a query or mutation without editing internal JSON.",
+        "document_section": "GraphQL document",
+        "document": "GraphQL document",
+        "document_help": "Use a query for synced or read operations and a mutation only for actions.",
+        "operation_name_optional": "Operation name (optional)",
+        "variables": "Variables",
+        "add_variable": "Add variable",
+        "sync_section": "Synced response and Relay pagination",
+        "has_next_path": "Has next page path",
+        "cursor_path": "Cursor path",
+        "cursor_variable": "Cursor variable",
+        "max_pages": "Maximum pages",
+        "response_section": "Safe response mapping",
+        "add_field": "Add response field",
+        "test_query": "Test query",
+        "preview_mutation": "Preview mutation request",
+        "save_operation": "Save GraphQL operation"
+    },
+    "crm": {
+        "customer_360": "Customer 360",
+        "custom_fields": "Custom fields",
+        "segments": "Segments",
+        "generate_summary": "Generate summary",
+        "summary_stale": "May be outdated",
+        "identities": "Identities",
+        "facts": "Structured facts",
+        "activity": "Activity",
+        "merge": "Merge customers",
+        "confirm_merge": "Confirm merge",
+        "no_summary": "No summary generated yet.",
+        "add_identity": "Add identity",
+        "primary": "Primary",
+        "add_fact": "Add fact",
+        "merge_preview": "Merge preview",
+        "duplicate_customer": "Duplicate customer",
+        "ai_summary": "AI summary",
+        "regenerate_summary": "Regenerate summary",
+        "new_segment": "New segment",
+        "filter": "Filter",
+        "matching_customers": "Matching customers"
+    }
+}
