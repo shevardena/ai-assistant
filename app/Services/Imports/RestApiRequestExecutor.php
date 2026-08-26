@@ -122,7 +122,14 @@ class RestApiRequestExecutor
             $options['json'] = $payload;
         }
 
-        $response = $request->send(Str::upper($method), $url, $options);
+        try {
+            $response = $request->send(Str::upper($method), $url, $options);
+        } catch (ConnectionException $exception) {
+            throw new ImportException(
+                'The API server could not be reached. Check the production server DNS, firewall, TLS certificate, and outbound HTTPS access.',
+                previous: $exception,
+            );
+        }
 
         return $this->parseResponse($response, $url);
     }

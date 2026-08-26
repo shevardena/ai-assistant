@@ -7,6 +7,7 @@ use App\Http\Requests\TestApiConnectionRequest;
 use App\Models\DataSource;
 use App\Models\Team;
 use App\Services\Api\ApiConnectionBuilderService;
+use App\Services\Imports\Exceptions\ImportException;
 use App\Services\Onboarding\BusinessTemplateRegistry;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Http\JsonResponse;
@@ -210,6 +211,14 @@ class ApiConnectionBuilderController extends Controller
     {
         try {
             return response()->json($this->builder->test($request->validated()));
+        } catch (ImportException $exception) {
+            report($exception);
+
+            return response()->json([
+                'ok' => false,
+                'error' => 'connection_failed',
+                'message' => $exception->getMessage(),
+            ], 422);
         } catch (Throwable $exception) {
             report($exception);
 

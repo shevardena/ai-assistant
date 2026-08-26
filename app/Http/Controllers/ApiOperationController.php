@@ -146,6 +146,14 @@ class ApiOperationController extends Controller
                 'error' => $exception->errorType,
                 'message' => 'The GraphQL operation could not be tested safely.',
             ], 422);
+        } catch (ImportException $exception) {
+            report($exception);
+
+            return response()->json([
+                'ok' => false,
+                'error' => 'request_failed',
+                'message' => $exception->getMessage(),
+            ], 422);
         } catch (\Throwable $exception) {
             report($exception);
 
