@@ -51,6 +51,14 @@ class WidgetDomainNormalizer
             return $host;
         }
 
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            if ($this->isForbiddenIp($host)) {
+                throw new InvalidArgumentException('Private and reserved IP addresses are not allowed.');
+            }
+
+            return $host;
+        }
+
         if (str_starts_with($host, '*.') || ! preg_match('/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/i', $host)) {
             throw new InvalidArgumentException('Enter a valid hostname.');
         }

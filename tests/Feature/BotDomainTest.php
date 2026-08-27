@@ -53,6 +53,20 @@ test('domain management rejects paths and disabled localhost domains', function 
         ->assertSessionHasErrors('domain');
 });
 
+test('domain management accepts public IP addresses', function () {
+    [$user, $team, $bot] = botDomainContext();
+
+    $this->actingAs($user)
+        ->post(route('bots.domains.store', [
+            'current_team' => $team->slug,
+            'bot' => $bot,
+        ]), ['domain' => '158.220.112.169'])
+        ->assertRedirect();
+
+    expect(BotDomain::query()->where('bot_id', $bot->id)->value('domain'))
+        ->toBe('158.220.112.169');
+});
+
 test('domain matching is exact and wildcard suffixes are not implicit', function () {
     config()->set('widget.allow_localhost', true);
     [$user, $team, $bot] = botDomainContext();
