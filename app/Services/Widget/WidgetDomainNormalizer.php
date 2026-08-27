@@ -65,4 +65,13 @@ class WidgetDomainNormalizer
 
         return $host;
     }
+
+    private function isForbiddenIp(string $host): bool
+    {
+        return filter_var(
+            $host,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
+        ) === false;
+    }
 }
