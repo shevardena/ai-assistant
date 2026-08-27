@@ -168,31 +168,47 @@ const defaultCardStyles: ProductCardStyles = {
     button_text_color: '#ffffff',
 };
 
-export default function BotDesign({ bot, datasets, liveOperations, platform }: Props) {
+export default function BotDesign({
+    bot,
+    datasets,
+    liveOperations,
+    platform,
+}: Props) {
     const { currentTeam } = usePage().props;
     const initialLiveOperation = liveOperations.find(
         (operation) => operation.template?.apiOperationId != null,
     );
+    const initialProductSource =
+        datasets.length > 0 && initialLiveOperation === undefined
+            ? 'dataset'
+            : 'live';
+    const initialSelectedLiveOperation =
+        initialLiveOperation ?? liveOperations[0] ?? null;
     const [activeTab, setActiveTab] = useState<Tab>('product');
     const [datasetId, setDatasetId] = useState<number | null>(
         datasets[0]?.id ?? null,
     );
     const [productSource, setProductSource] = useState<'dataset' | 'live'>(
-        datasets.length > 0 && initialLiveOperation === undefined
-            ? 'dataset'
-            : 'live',
+        initialProductSource,
     );
     const [liveOperationId, setLiveOperationId] = useState<number | null>(
-        initialLiveOperation?.id ?? liveOperations[0]?.id ?? null,
+        initialSelectedLiveOperation?.id ?? null,
     );
     const [mapping, setMapping] = useState<Record<string, string>>(() =>
-        initialMapping(datasets[0]),
+        initialProductSource === 'live'
+            ? initialLiveMapping(initialSelectedLiveOperation)
+            : initialMapping(datasets[0]),
     );
     const [buttonLabel, setButtonLabel] = useState(
-        () => datasets[0]?.template?.buttonLabel ?? 'View product',
+        () =>
+            (initialProductSource === 'live'
+                ? initialSelectedLiveOperation?.template?.buttonLabel
+                : datasets[0]?.template?.buttonLabel) ?? 'View product',
     );
-    const [mappingDirty, setMappingDirty] = useState(
-        () => datasets[0]?.template === null,
+    const [mappingDirty, setMappingDirty] = useState(() =>
+        initialProductSource === 'live'
+            ? initialSelectedLiveOperation?.template === null
+            : datasets[0]?.template === null,
     );
     const [cardStylesDirty, setCardStylesDirty] = useState(false);
     const [appearanceDirty, setAppearanceDirty] = useState(false);
@@ -251,11 +267,15 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
     const [removeAvatar, setRemoveAvatar] = useState(false);
     const selectedDataset =
         datasets.find((dataset) => dataset.id === datasetId) ?? null;
-    const selectedLiveOperation = liveOperations.find(
-        (operation) => operation.id === liveOperationId,
-    ) ?? null;
+    const selectedLiveOperation =
+        liveOperations.find((operation) => operation.id === liveOperationId) ??
+        null;
     const [cardStyles, setCardStyles] = useState<ProductCardStyles>(() =>
-        initialCardStyles(datasets[0]),
+        initialCardStyles(
+            initialProductSource === 'live'
+                ? initialSelectedLiveOperation?.template
+                : datasets[0]?.template,
+        ),
     );
     const hasChanges = mappingDirty || cardStylesDirty || appearanceDirty;
     const previewCards = useMemo(() => {
@@ -264,12 +284,20 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
                 return [];
             }
 
-            const card = previewLiveCard(selectedLiveOperation, mapping, buttonLabel, cardStyles);
+            const card = previewLiveCard(
+                selectedLiveOperation,
+                mapping,
+                buttonLabel,
+                cardStyles,
+            );
 
             return Array.from({ length: 3 }, (_, index) => ({
                 ...card,
                 id: `${card.id}-preview-${index}`,
-                title: index === 0 ? card.title : `${card.title} · option ${index + 1}`,
+                title:
+                    index === 0
+                        ? card.title
+                        : `${card.title} · option ${index + 1}`,
             }));
         }
 
@@ -292,7 +320,14 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
                     ? card.title
                     : `${card.title} · option ${index + 1}`,
         }));
-    }, [buttonLabel, cardStyles, mapping, productSource, selectedDataset, selectedLiveOperation]);
+    }, [
+        buttonLabel,
+        cardStyles,
+        mapping,
+        productSource,
+        selectedDataset,
+        selectedLiveOperation,
+    ]);
 
     if (!currentTeam) {
         return null;
@@ -323,7 +358,7 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
         setDatasetId(next.id);
         setMapping(initialMapping(next));
         setButtonLabel(next.template?.buttonLabel ?? 'View product');
-        setCardStyles(initialCardStyles(next));
+        setCardStyles(initialCardStyles(next.template));
         setMappingDirty(next.template === null);
         setCardStylesDirty(false);
         setAutoMapFeedback(null);
@@ -394,13 +429,25 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
                             <input
                                 type="hidden"
                                 name="dataset_id"
-                                value={productSource === 'dataset' ? datasetId ?? '' : ''}
+                                value={
+                                    productSource === 'dataset'
+                                        ? (datasetId ?? '')
+                                        : ''
+                                }
                             />
-                            <input type="hidden" name="product_source" value={productSource} />
+                            <input
+                                type="hidden"
+                                name="product_source"
+                                value={productSource}
+                            />
                             <input
                                 type="hidden"
                                 name="live_operation_id"
-                                value={productSource === 'live' ? liveOperationId ?? '' : ''}
+                                value={
+                                    productSource === 'live'
+                                        ? (liveOperationId ?? '')
+                                        : ''
+                                }
                             />
                             <input
                                 type="hidden"
@@ -611,7 +658,9 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
                                             datasets={datasets}
                                             liveOperations={liveOperations}
                                             productSource={productSource}
-                                            selectedLiveOperation={selectedLiveOperation}
+                                            selectedLiveOperation={
+                                                selectedLiveOperation
+                                            }
                                             selectedDataset={selectedDataset}
                                             datasetId={datasetId}
                                             mapping={mapping}
@@ -622,15 +671,77 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
                                             onDatasetChange={selectDataset}
                                             onProductSourceChange={(source) => {
                                                 setProductSource(source);
+
+                                                if (source === 'live') {
+                                                    const operation =
+                                                        liveOperations.find(
+                                                            (item) =>
+                                                                item.id ===
+                                                                liveOperationId,
+                                                        );
+
+                                                    setMapping(
+                                                        initialLiveMapping(
+                                                            operation ?? null,
+                                                        ),
+                                                    );
+                                                    setButtonLabel(
+                                                        operation?.template
+                                                            ?.buttonLabel ??
+                                                            'View product',
+                                                    );
+                                                    setCardStyles(
+                                                        initialCardStyles(
+                                                            operation?.template,
+                                                        ),
+                                                    );
+                                                } else if (selectedDataset) {
+                                                    setMapping(
+                                                        initialMapping(
+                                                            selectedDataset,
+                                                        ),
+                                                    );
+                                                    setButtonLabel(
+                                                        selectedDataset.template
+                                                            ?.buttonLabel ??
+                                                            'View product',
+                                                    );
+                                                    setCardStyles(
+                                                        initialCardStyles(
+                                                            selectedDataset.template,
+                                                        ),
+                                                    );
+                                                }
+
                                                 setMappingDirty(true);
+                                                setCardStylesDirty(false);
                                                 setSaveFeedback(false);
                                             }}
                                             onLiveOperationChange={(value) => {
-                                                const operation = liveOperations.find((item) => item.id === Number(value));
-                                                setLiveOperationId(operation?.id ?? null);
-                                                setMapping(operation?.template?.mapping ?? { title: operation?.fields[0] ?? '' });
-                                                setButtonLabel(operation?.template?.buttonLabel ?? 'View product');
-                                                setCardStyles({ ...defaultCardStyles, ...(operation?.template?.cardStyle ?? {}) });
+                                                const operation =
+                                                    liveOperations.find(
+                                                        (item) =>
+                                                            item.id ===
+                                                            Number(value),
+                                                    );
+                                                setLiveOperationId(
+                                                    operation?.id ?? null,
+                                                );
+                                                setMapping(
+                                                    initialLiveMapping(
+                                                        operation ?? null,
+                                                    ),
+                                                );
+                                                setButtonLabel(
+                                                    operation?.template
+                                                        ?.buttonLabel ??
+                                                        'View product',
+                                                );
+                                                setCardStyles(
+                                                    initialCardStyles(
+                                                        operation?.template,
+                                                    ),
+                                                );
                                                 setMappingDirty(true);
                                                 setCardStylesDirty(false);
                                                 setSaveFeedback(false);
@@ -654,7 +765,11 @@ export default function BotDesign({ bot, datasets, liveOperations, platform }: P
                                             appearance.input_placeholder
                                         }
                                         cards={previewCards}
-                                        hasDataset={productSource === 'live' ? selectedLiveOperation !== null : selectedDataset !== null}
+                                        hasDataset={
+                                            productSource === 'live'
+                                                ? selectedLiveOperation !== null
+                                                : selectedDataset !== null
+                                        }
                                         welcomeMessage={welcomeMessage}
                                         platform={platform}
                                     />
@@ -1006,7 +1121,8 @@ function ProductCardPanel({
                 </CardHeader>
                 <CardContent className="grid gap-3">
                     <p className="text-sm text-muted-foreground">
-                        Attach a Dataset or configure a live catalog operation before configuring product cards.
+                        Attach a Dataset or configure a live catalog operation
+                        before configuring product cards.
                     </p>
                     <Button variant="outline" asChild>
                         <Link href={edit([currentTeamSlug, bot.id]).url}>
@@ -1033,16 +1149,20 @@ function ProductCardPanel({
                     </div>
                     <Badge
                         variant={
-                            (productSource === 'live'
-                                ? selectedLiveOperation?.template
-                                : selectedDataset?.template)
+                            (
+                                productSource === 'live'
+                                    ? selectedLiveOperation?.template
+                                    : selectedDataset?.template
+                            )
                                 ? 'default'
                                 : 'secondary'
                         }
                     >
-                        {(productSource === 'live'
-                            ? selectedLiveOperation?.template
-                            : selectedDataset?.template)
+                        {(
+                            productSource === 'live'
+                                ? selectedLiveOperation?.template
+                                : selectedDataset?.template
+                        )
                             ? 'Product card configured'
                             : 'Not configured'}
                     </Badge>
@@ -1052,59 +1172,112 @@ function ProductCardPanel({
                     <select
                         id="product-source"
                         value={productSource}
-                        onChange={(event) => onProductSourceChange(event.target.value as 'dataset' | 'live')}
+                        onChange={(event) =>
+                            onProductSourceChange(
+                                event.target.value as 'dataset' | 'live',
+                            )
+                        }
                         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
-                        {datasets.length > 0 ? <option value="dataset">Local Dataset</option> : null}
-                        {liveOperations.length > 0 ? <option value="live">Live API operation</option> : null}
+                        {datasets.length > 0 ? (
+                            <option value="dataset">Local Dataset</option>
+                        ) : null}
+                        {liveOperations.length > 0 ? (
+                            <option value="live">Live API operation</option>
+                        ) : null}
                     </select>
                 </div>
-                {productSource === 'dataset' ? <div className="grid gap-2 sm:max-w-sm">
-                    <Label htmlFor="card-dataset">Dataset</Label>
-                    <select
-                        id="card-dataset"
-                        value={datasetId === null ? '' : String(datasetId)}
-                        onChange={(event) =>
-                            onDatasetChange(event.target.value)
-                        }
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                        {datasets.map((dataset) => (
-                            <option key={dataset.id} value={dataset.id}>
-                                {dataset.name} ·{' '}
-                                {dataset.template
-                                    ? 'Configured'
-                                    : 'Not configured'}
-                            </option>
-                        ))}
-                    </select>
-                </div> : <div className="grid gap-2 sm:max-w-sm">
-                    <Label htmlFor="live-operation">Live operation</Label>
-                    <select
-                        id="live-operation"
-                        value={selectedLiveOperation?.id ?? ''}
-                        onChange={(event) => onLiveOperationChange(event.target.value)}
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                        <option value="">Choose an operation</option>
-                        {liveOperations.map((operation) => <option key={operation.id} value={operation.id}>{operation.sourceName} · {operation.name}</option>)}
-                    </select>
-                    <InputError message={errors.live_operation_id} />
-                </div>}
+                {productSource === 'dataset' ? (
+                    <div className="grid gap-2 sm:max-w-sm">
+                        <Label htmlFor="card-dataset">Dataset</Label>
+                        <select
+                            id="card-dataset"
+                            value={datasetId === null ? '' : String(datasetId)}
+                            onChange={(event) =>
+                                onDatasetChange(event.target.value)
+                            }
+                            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        >
+                            {datasets.map((dataset) => (
+                                <option key={dataset.id} value={dataset.id}>
+                                    {dataset.name} ·{' '}
+                                    {dataset.template
+                                        ? 'Configured'
+                                        : 'Not configured'}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                ) : (
+                    <div className="grid gap-2 sm:max-w-sm">
+                        <Label htmlFor="live-operation">Live operation</Label>
+                        <select
+                            id="live-operation"
+                            value={selectedLiveOperation?.id ?? ''}
+                            onChange={(event) =>
+                                onLiveOperationChange(event.target.value)
+                            }
+                            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        >
+                            <option value="">Choose an operation</option>
+                            {liveOperations.map((operation) => (
+                                <option key={operation.id} value={operation.id}>
+                                    {operation.sourceName} · {operation.name}
+                                </option>
+                            ))}
+                        </select>
+                        <InputError message={errors.live_operation_id} />
+                    </div>
+                )}
             </CardHeader>
             <CardContent className="grid gap-4">
                 {productSource === 'live' ? (
                     <div className="grid gap-3 rounded-lg border border-dashed p-4">
-                        <p className="text-sm text-muted-foreground">Map the live operation&apos;s safe response fields to the product card.</p>
-                        {selectedLiveOperation ? <div className="grid gap-3 sm:grid-cols-2">
-                            {cardSlots.map((slot) => <div key={slot.key} className="grid gap-1">
-                                <Label>{slot.label}{slot.required ? ' *' : ''}</Label>
-                                <select value={mapping[slot.key] ?? 'none'} onChange={(event) => onMappingChange(slot.key, event.target.value === 'none' ? '' : event.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-                                    {!slot.required ? <option value="none">None</option> : null}
-                                    {selectedLiveOperation.fields.map((field) => <option key={field} value={field}>{field}</option>)}
-                                </select>
-                            </div>)}
-                        </div> : null}
+                        <p className="text-sm text-muted-foreground">
+                            Map the live operation&apos;s safe response fields
+                            to the product card.
+                        </p>
+                        {selectedLiveOperation ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {cardSlots.map((slot) => (
+                                    <div key={slot.key} className="grid gap-1">
+                                        <Label>
+                                            {slot.label}
+                                            {slot.required ? ' *' : ''}
+                                        </Label>
+                                        <select
+                                            value={mapping[slot.key] ?? 'none'}
+                                            onChange={(event) =>
+                                                onMappingChange(
+                                                    slot.key,
+                                                    event.target.value ===
+                                                        'none'
+                                                        ? ''
+                                                        : event.target.value,
+                                                )
+                                            }
+                                            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                                        >
+                                            {!slot.required ? (
+                                                <option value="none">
+                                                    None
+                                                </option>
+                                            ) : null}
+                                            {selectedLiveOperation.fields.map(
+                                                (field) => (
+                                                    <option
+                                                        key={field}
+                                                        value={field}
+                                                    >
+                                                        {field}
+                                                    </option>
+                                                ),
+                                            )}
+                                        </select>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
                         <InputError message={errors.mapping} />
                     </div>
                 ) : !hasDisplayableFields ? (
@@ -1275,97 +1448,97 @@ function ProductCardPanel({
                                 </p>
                             </div>
                         ) : null}
-                        <div className="grid gap-3 rounded-lg border p-4">
-                            <div>
-                                <p className="text-sm font-medium">
-                                    Product card styling
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    Customize card background, text, and CTA
-                                    colors.
-                                </p>
-                            </div>
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <ColorSetting
-                                    label="Card background"
-                                    value={cardStyles.background_color}
-                                    onChange={(value) =>
-                                        onCardStyleChange({
-                                            background_color: value,
-                                        })
-                                    }
-                                />
-                                <ColorSetting
-                                    label="Card text"
-                                    value={cardStyles.text_color}
-                                    onChange={(value) =>
-                                        onCardStyleChange({
-                                            text_color: value,
-                                        })
-                                    }
-                                />
-                                <ColorSetting
-                                    label="Muted text"
-                                    value={cardStyles.muted_text_color}
-                                    onChange={(value) =>
-                                        onCardStyleChange({
-                                            muted_text_color: value,
-                                        })
-                                    }
-                                />
-                                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
-                                    <ColorSetting
-                                        label="Price color"
-                                        value={cardStyles.price_color}
-                                        onChange={(value) =>
-                                            onCardStyleChange({
-                                                price_color: value,
-                                            })
-                                        }
-                                    />
-                                    <ColorSetting
-                                        label="Discount color"
-                                        value={cardStyles.discount_color}
-                                        onChange={(value) =>
-                                            onCardStyleChange({
-                                                discount_color: value,
-                                            })
-                                        }
-                                    />
-                                    <ColorSetting
-                                        label="Old price color"
-                                        value={cardStyles.old_price_color}
-                                        onChange={(value) =>
-                                            onCardStyleChange({
-                                                old_price_color: value,
-                                            })
-                                        }
-                                    />
-                                    <ColorSetting
-                                        label="Button color"
-                                        value={cardStyles.button_color}
-                                        onChange={(value) =>
-                                            onCardStyleChange({
-                                                button_color: value,
-                                            })
-                                        }
-                                    />
-                                    <ColorSetting
-                                        label="Button text color"
-                                        value={cardStyles.button_text_color}
-                                        onChange={(value) =>
-                                            onCardStyleChange({
-                                                button_text_color: value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        </div>
                     </>
                 )}
+                {(productSource === 'live'
+                    ? selectedLiveOperation !== null
+                    : hasDisplayableFields) ? (
+                    <ProductCardStylingPanel
+                        cardStyles={cardStyles}
+                        onCardStyleChange={onCardStyleChange}
+                    />
+                ) : null}
             </CardContent>
         </Card>
+    );
+}
+
+function ProductCardStylingPanel({
+    cardStyles,
+    onCardStyleChange,
+}: {
+    cardStyles: ProductCardStyles;
+    onCardStyleChange: (changes: Partial<ProductCardStyles>) => void;
+}) {
+    return (
+        <div className="grid gap-3 rounded-lg border p-4">
+            <div>
+                <p className="text-sm font-medium">Product card styling</p>
+                <p className="text-xs text-muted-foreground">
+                    Customize card background, text, and CTA colors.
+                </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+                <ColorSetting
+                    label="Card background"
+                    value={cardStyles.background_color}
+                    onChange={(value) =>
+                        onCardStyleChange({ background_color: value })
+                    }
+                />
+                <ColorSetting
+                    label="Card text"
+                    value={cardStyles.text_color}
+                    onChange={(value) =>
+                        onCardStyleChange({ text_color: value })
+                    }
+                />
+                <ColorSetting
+                    label="Muted text"
+                    value={cardStyles.muted_text_color}
+                    onChange={(value) =>
+                        onCardStyleChange({ muted_text_color: value })
+                    }
+                />
+                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
+                    <ColorSetting
+                        label="Price color"
+                        value={cardStyles.price_color}
+                        onChange={(value) =>
+                            onCardStyleChange({ price_color: value })
+                        }
+                    />
+                    <ColorSetting
+                        label="Discount color"
+                        value={cardStyles.discount_color}
+                        onChange={(value) =>
+                            onCardStyleChange({ discount_color: value })
+                        }
+                    />
+                    <ColorSetting
+                        label="Old price color"
+                        value={cardStyles.old_price_color}
+                        onChange={(value) =>
+                            onCardStyleChange({ old_price_color: value })
+                        }
+                    />
+                    <ColorSetting
+                        label="Button color"
+                        value={cardStyles.button_color}
+                        onChange={(value) =>
+                            onCardStyleChange({ button_color: value })
+                        }
+                    />
+                    <ColorSetting
+                        label="Button text color"
+                        value={cardStyles.button_text_color}
+                        onChange={(value) =>
+                            onCardStyleChange({ button_text_color: value })
+                        }
+                    />
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -1632,8 +1805,27 @@ function initialMapping(dataset: Dataset | undefined): Record<string, string> {
         : autoMapFields(dataset.fields);
 }
 
-function initialCardStyles(dataset: Dataset | undefined): ProductCardStyles {
-    const styles = dataset?.template?.cardStyle ?? {};
+function initialLiveMapping(
+    operation: LiveOperation | null,
+): Record<string, string> {
+    const mapping = Object.fromEntries(
+        Object.entries(operation?.template?.mapping ?? {})
+            .filter(([slot]) =>
+                cardSlots.some((cardSlot) => cardSlot.key === slot),
+            )
+            .map(([slot, field]) => [slot, String(field)]),
+    );
+
+    return {
+        title: operation?.fields[0] ?? '',
+        ...mapping,
+    };
+}
+
+function initialCardStyles(
+    template: Dataset['template'] | undefined,
+): ProductCardStyles {
+    const styles = template?.cardStyle ?? {};
 
     return {
         background_color: safeHexColor(
@@ -1784,7 +1976,11 @@ function previewLiveCard(
         const field = mapping[slot] ?? '';
         const normalized = field.toLowerCase();
 
-        if (slot === 'image' || normalized.includes('image') || normalized.includes('thumbnail')) {
+        if (
+            slot === 'image' ||
+            normalized.includes('image') ||
+            normalized.includes('thumbnail')
+        ) {
             return 'https://via.placeholder.com/640x360?text=Product';
         }
 
@@ -1800,7 +1996,11 @@ function previewLiveCard(
             return 'https://example.com/product';
         }
 
-        return field ? (slot === 'title' ? `${operation.name} product` : field) : null;
+        return field
+            ? slot === 'title'
+                ? `${operation.name} product`
+                : field
+            : null;
     };
 
     return {

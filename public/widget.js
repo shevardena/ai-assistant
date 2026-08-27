@@ -38,7 +38,7 @@
         '.launcher-status.online { background: #22c55e; }',
         '.frame { display: none; bottom: 76px; ' + position + ': 20px; width: min(390px, calc(100vw - 32px)); height: min(620px, calc(100vh - 96px)); border: 0; border-radius: 18px; background: white; box-shadow: 0 12px 40px rgb(0 0 0 / 24%); }',
         '.frame.expanded { width: min(560px, calc(100vw - 32px)); height: min(760px, calc(100vh - 96px)); }',
-        '@media (max-width: 480px) { .frame, .frame.expanded { bottom: 12px; ' + position + ': 12px; width: calc(100vw - 24px); height: calc(100vh - 24px); } .launcher { bottom: 12px; ' + position + ': 12px; } }',
+        '@media (max-width: 640px) { .frame, .frame.expanded { top: 0; right: 0; bottom: auto; left: 0; width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; } .launcher { bottom: max(12px, env(safe-area-inset-bottom)); ' + position + ': 12px; } }',
     ].join('');
     var launcher = document.createElement('button');
     launcher.className = 'launcher';
@@ -132,14 +132,12 @@
         identity.launcherMode = ['icon-text', 'text-only', 'icon-only'].indexOf(event.data.launcherMode) >= 0
             ? event.data.launcherMode
             : 'icon-text';
-        renderLauncher(false);
-
-        launcher.style.display = 'block';
+        renderLauncher(frame.style.display === 'block');
     };
 
     window.addEventListener('message', handleWidgetReady);
     frame.addEventListener('load', function () {
-        launcher.style.display = 'block';
+        renderLauncher(frame.style.display === 'block');
     });
 
     launcher.addEventListener('click', function () {
