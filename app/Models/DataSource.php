@@ -33,6 +33,24 @@ class DataSource extends Model
     }
 
     /**
+     * Scope the query to data sources that can execute live API operations.
+     *
+     * Live connections do not need an import before they can be used. A newly
+     * configured connection remains pending until its first synchronization,
+     * so both pending and ready sources are valid for on-demand operations.
+     *
+     * @param  Builder<DataSource>  $query
+     * @return Builder<DataSource>
+     */
+    public function scopeLiveUsable(Builder $query): Builder
+    {
+        return $query->whereIn('status', [
+            DataSourceStatus::Pending->value,
+            DataSourceStatus::Ready->value,
+        ]);
+    }
+
+    /**
      * Get the team that owns this data source.
      *
      * @return BelongsTo<Team, $this>

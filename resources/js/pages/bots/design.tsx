@@ -56,10 +56,21 @@ type Dataset = {
     template: {
         name: string;
         mapping: Record<string, number | string>;
+        apiOperationId?: number | null;
         buttonLabel?: string;
         cardStyle?: Partial<ProductCardStyles>;
     } | null;
     sample: { id: string; values: Record<string, Primitive> } | null;
+};
+
+type LiveOperation = {
+    id: number;
+    name: string;
+    key: string;
+    capability: string;
+    sourceName: string | null;
+    fields: string[];
+    template: Dataset['template'];
 };
 
 type Props = {
@@ -70,6 +81,7 @@ type Props = {
         appearance: Record<string, string | null>;
     };
     datasets: Dataset[];
+    liveOperations: LiveOperation[];
     platform: { name: string; url: string };
 };
 
@@ -156,11 +168,22 @@ const defaultCardStyles: ProductCardStyles = {
     button_text_color: '#ffffff',
 };
 
-export default function BotDesign({ bot, datasets, platform }: Props) {
+export default function BotDesign({ bot, datasets, liveOperations, platform }: Props) {
     const { currentTeam } = usePage().props;
+    const initialLiveOperation = liveOperations.find(
+        (operation) => operation.template?.apiOperationId != null,
+    );
     const [activeTab, setActiveTab] = useState<Tab>('product');
     const [datasetId, setDatasetId] = useState<number | null>(
         datasets[0]?.id ?? null,
+    );
+    const [productSource, setProductSource] = useState<'dataset' | 'live'>(
+        datasets.length > 0 && initialLiveOperation === undefined
+            ? 'dataset'
+            : 'live',
+    );
+    const [liveOperationId, setLiveOperationId] = useState<number | null>(
+        initialLiveOperation?.id ?? liveOperations[0]?.id ?? null,
     );
     const [mapping, setMapping] = useState<Record<string, string>>(() =>
         initialMapping(datasets[0]),
@@ -228,11 +251,28 @@ export default function BotDesign({ bot, datasets, platform }: Props) {
     const [removeAvatar, setRemoveAvatar] = useState(false);
     const selectedDataset =
         datasets.find((dataset) => dataset.id === datasetId) ?? null;
+    const selectedLiveOperation = liveOperations.find(
+        (operation) => operation.id === liveOperationId,
+    ) ?? null;
     const [cardStyles, setCardStyles] = useState<ProductCardStyles>(() =>
         initialCardStyles(datasets[0]),
     );
     const hasChanges = mappingDirty || cardStylesDirty || appearanceDirty;
     const previewCards = useMemo(() => {
+        if (productSource === 'live') {
+            if (!selectedLiveOperation) {
+                return [];
+            }
+
+            const card = previewLiveCard(selectedLiveOperation, mapping, buttonLabel, cardStyles);
+
+            return Array.from({ length: 3 }, (_, index) => ({
+                ...card,
+                id: `${card.id}-preview-${index}`,
+                title: index === 0 ? card.title : `${card.title} · option ${index + 1}`,
+            }));
+        }
+
         if (!selectedDataset || selectedDataset.fields.length === 0) {
             return [];
         }
@@ -252,7 +292,7 @@ export default function BotDesign({ bot, datasets, platform }: Props) {
                     ? card.title
                     : `${card.title} · option ${index + 1}`,
         }));
-    }, [buttonLabel, cardStyles, mapping, selectedDataset]);
+    }, [buttonLabel, cardStyles, mapping, productSource, selectedDataset, selectedLiveOperation]);
 
     if (!currentTeam) {
         return null;
@@ -354,7 +394,13 @@ export default function BotDesign({ bot, datasets, platform }: Props) {
                             <input
                                 type="hidden"
                                 name="dataset_id"
-                                value={datasetId ?? ''}
+                                value={productSource === 'dataset' ? datasetId ?? '' : ''}
+                            />
+                            <input type="hidden" name="product_source" value={productSource} />
+                            <input
+                                type="hidden"
+                                name="live_operation_id"
+                                value={productSource === 'live' ? liveOperationId ?? '' : ''}
                             />
                             <input
                                 type="hidden"
@@ -563,6 +609,9 @@ export default function BotDesign({ bot, datasets, platform }: Props) {
                                             bot={bot}
                                             currentTeamSlug={currentTeam.slug}
                                             datasets={datasets}
+                                            liveOperations={liveOperations}
+                                            productSource={productSource}
+                                            selectedLiveOperation={selectedLiveOperation}
                                             selectedDataset={selectedDataset}
                                             datasetId={datasetId}
                                             mapping={mapping}
@@ -571,6 +620,21 @@ export default function BotDesign({ bot, datasets, platform }: Props) {
                                             autoMapFeedback={autoMapFeedback}
                                             errors={errors}
                                             onDatasetChange={selectDataset}
+                                            onProductSourceChange={(source) => {
+                                                setProductSource(source);
+                                                setMappingDirty(true);
+                                                setSaveFeedback(false);
+                                            }}
+                                            onLiveOperationChange={(value) => {
+                                                const operation = liveOperations.find((item) => item.id === Number(value));
+                                                setLiveOperationId(operation?.id ?? null);
+                                                setMapping(operation?.template?.mapping ?? { title: operation?.fields[0] ?? '' });
+                                                setButtonLabel(operation?.template?.buttonLabel ?? 'View product');
+                                                setCardStyles({ ...defaultCardStyles, ...(operation?.template?.cardStyle ?? {}) });
+                                                setMappingDirty(true);
+                                                setCardStylesDirty(false);
+                                                setSaveFeedback(false);
+                                            }}
                                             onMappingChange={updateMapping}
                                             onCardStyleChange={updateCardStyles}
                                             onButtonLabelChange={(value) => {
@@ -590,7 +654,7 @@ export default function BotDesign({ bot, datasets, platform }: Props) {
                                             appearance.input_placeholder
                                         }
                                         cards={previewCards}
-                                        hasDataset={selectedDataset !== null}
+                                        hasDataset={productSource === 'live' ? selectedLiveOperation !== null : selectedDataset !== null}
                                         welcomeMessage={welcomeMessage}
                                         platform={platform}
                                     />
@@ -895,6 +959,9 @@ function ProductCardPanel({
     bot,
     currentTeamSlug,
     datasets,
+    liveOperations,
+    productSource,
+    selectedLiveOperation,
     selectedDataset,
     datasetId,
     mapping,
@@ -903,6 +970,8 @@ function ProductCardPanel({
     autoMapFeedback,
     errors,
     onDatasetChange,
+    onProductSourceChange,
+    onLiveOperationChange,
     onMappingChange,
     onCardStyleChange,
     onButtonLabelChange,
@@ -911,6 +980,9 @@ function ProductCardPanel({
     bot: Props['bot'];
     currentTeamSlug: string;
     datasets: Dataset[];
+    liveOperations: LiveOperation[];
+    productSource: 'dataset' | 'live';
+    selectedLiveOperation: LiveOperation | null;
     selectedDataset: Dataset | null;
     datasetId: number | null;
     mapping: Record<string, string>;
@@ -919,12 +991,14 @@ function ProductCardPanel({
     autoMapFeedback: string | null;
     errors: Record<string, string>;
     onDatasetChange: (value: string) => void;
+    onProductSourceChange: (value: 'dataset' | 'live') => void;
+    onLiveOperationChange: (value: string) => void;
     onMappingChange: (slot: string, value: string) => void;
     onCardStyleChange: (changes: Partial<ProductCardStyles>) => void;
     onButtonLabelChange: (value: string) => void;
     onAutoMap: () => void;
 }) {
-    if (datasets.length === 0) {
+    if (datasets.length === 0 && liveOperations.length === 0) {
         return (
             <Card>
                 <CardHeader>
@@ -932,7 +1006,7 @@ function ProductCardPanel({
                 </CardHeader>
                 <CardContent className="grid gap-3">
                     <p className="text-sm text-muted-foreground">
-                        Attach a Dataset before configuring product cards.
+                        Attach a Dataset or configure a live catalog operation before configuring product cards.
                     </p>
                     <Button variant="outline" asChild>
                         <Link href={edit([currentTeamSlug, bot.id]).url}>
@@ -959,15 +1033,33 @@ function ProductCardPanel({
                     </div>
                     <Badge
                         variant={
-                            selectedDataset?.template ? 'default' : 'secondary'
+                            (productSource === 'live'
+                                ? selectedLiveOperation?.template
+                                : selectedDataset?.template)
+                                ? 'default'
+                                : 'secondary'
                         }
                     >
-                        {selectedDataset?.template
+                        {(productSource === 'live'
+                            ? selectedLiveOperation?.template
+                            : selectedDataset?.template)
                             ? 'Product card configured'
                             : 'Not configured'}
                     </Badge>
                 </div>
                 <div className="grid gap-2 sm:max-w-sm">
+                    <Label htmlFor="product-source">Product source</Label>
+                    <select
+                        id="product-source"
+                        value={productSource}
+                        onChange={(event) => onProductSourceChange(event.target.value as 'dataset' | 'live')}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                        {datasets.length > 0 ? <option value="dataset">Local Dataset</option> : null}
+                        {liveOperations.length > 0 ? <option value="live">Live API operation</option> : null}
+                    </select>
+                </div>
+                {productSource === 'dataset' ? <div className="grid gap-2 sm:max-w-sm">
                     <Label htmlFor="card-dataset">Dataset</Label>
                     <select
                         id="card-dataset"
@@ -986,10 +1078,36 @@ function ProductCardPanel({
                             </option>
                         ))}
                     </select>
-                </div>
+                </div> : <div className="grid gap-2 sm:max-w-sm">
+                    <Label htmlFor="live-operation">Live operation</Label>
+                    <select
+                        id="live-operation"
+                        value={selectedLiveOperation?.id ?? ''}
+                        onChange={(event) => onLiveOperationChange(event.target.value)}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                        <option value="">Choose an operation</option>
+                        {liveOperations.map((operation) => <option key={operation.id} value={operation.id}>{operation.sourceName} · {operation.name}</option>)}
+                    </select>
+                    <InputError message={errors.live_operation_id} />
+                </div>}
             </CardHeader>
             <CardContent className="grid gap-4">
-                {!hasDisplayableFields ? (
+                {productSource === 'live' ? (
+                    <div className="grid gap-3 rounded-lg border border-dashed p-4">
+                        <p className="text-sm text-muted-foreground">Map the live operation&apos;s safe response fields to the product card.</p>
+                        {selectedLiveOperation ? <div className="grid gap-3 sm:grid-cols-2">
+                            {cardSlots.map((slot) => <div key={slot.key} className="grid gap-1">
+                                <Label>{slot.label}{slot.required ? ' *' : ''}</Label>
+                                <select value={mapping[slot.key] ?? 'none'} onChange={(event) => onMappingChange(slot.key, event.target.value === 'none' ? '' : event.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+                                    {!slot.required ? <option value="none">None</option> : null}
+                                    {selectedLiveOperation.fields.map((field) => <option key={field} value={field}>{field}</option>)}
+                                </select>
+                            </div>)}
+                        </div> : null}
+                        <InputError message={errors.mapping} />
+                    </div>
+                ) : !hasDisplayableFields ? (
                     <div className="grid gap-3 rounded-lg border border-dashed p-4">
                         <p className="text-sm text-muted-foreground">
                             This Dataset has no displayable fields. Mark fields
@@ -1652,6 +1770,50 @@ function previewCard(
         discount: numberOrString(value('discount')),
         url: stringValue(value('url')),
         button_label: mapping.url ? buttonLabel.trim() || 'View product' : null,
+        styles,
+    };
+}
+
+function previewLiveCard(
+    operation: LiveOperation,
+    mapping: Record<string, string>,
+    buttonLabel: string,
+    styles: ProductCardStyles,
+): ProductCard {
+    const value = (slot: string): string | number | null => {
+        const field = mapping[slot] ?? '';
+        const normalized = field.toLowerCase();
+
+        if (slot === 'image' || normalized.includes('image') || normalized.includes('thumbnail')) {
+            return 'https://via.placeholder.com/640x360?text=Product';
+        }
+
+        if (slot === 'price' || normalized.includes('price')) {
+            return 35;
+        }
+
+        if (slot === 'old_price' || normalized.includes('old')) {
+            return null;
+        }
+
+        if (slot === 'url' || normalized === 'link') {
+            return 'https://example.com/product';
+        }
+
+        return field ? (slot === 'title' ? `${operation.name} product` : field) : null;
+    };
+
+    return {
+        id: 'live-preview',
+        image: stringValue(value('image')),
+        title: stringValue(value('title')) ?? 'Product title',
+        subtitle: stringValue(value('subtitle')),
+        description: stringValue(value('description')),
+        price: value('price'),
+        old_price: value('old_price'),
+        discount: value('discount'),
+        url: stringValue(value('url')),
+        button_label: mapping.url ? buttonLabel : null,
         styles,
     };
 }

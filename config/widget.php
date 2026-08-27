@@ -10,4 +10,5 @@ return [
     'max_result_cards' => (int) env('WIDGET_MAX_RESULT_CARDS', 6),
     'rate_limit_per_minute' => (int) env('WIDGET_RATE_LIMIT_PER_MINUTE', 30),
     'base_url' => env('WIDGET_BASE_URL', env('APP_URL', 'http://localhost')),
+    'demo_bot_id' => env('WIDGET_DEMO_BOT_ID'),
 ];

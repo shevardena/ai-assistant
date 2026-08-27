@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\ApiOperation;
 use App\Models\Bot;
+use App\Models\BotApiOperation;
 use App\Models\BotDataset;
 use App\Models\Dataset;
 use App\Models\DataSource;
@@ -98,6 +100,42 @@ test('bot readiness requires an enabled ready dataset in its own team', function
     BotDataset::factory()->create([
         'bot_id' => $bot->id,
         'dataset_id' => $enabledReadyDataset->id,
+        'is_enabled' => true,
+    ]);
+
+    app(ResourceStatusService::class)->refreshBotStatus($bot);
+
+    expect($bot->fresh()->status)->toBe('ready');
+});
+
+test('bot readiness accepts a usable live catalog operation without a dataset', function () {
+    $dataSource = DataSource::factory()->create([
+        'type' => 'rest_api',
+        'status' => 'pending',
+    ]);
+    $bot = Bot::factory()->create([
+        'team_id' => $dataSource->team_id,
+        'status' => 'draft',
+    ]);
+    $operation = ApiOperation::factory()->create([
+        'data_source_id' => $dataSource->id,
+        'type' => 'mutation',
+        'execution_mode' => 'read',
+        'request_schema' => ['type' => 'object'],
+        'response_mapping' => [
+            'collection' => [
+                'path' => 'data',
+                'fields' => [
+                    'id' => ['path' => 'id', 'required' => true],
+                    'title' => ['path' => 'name', 'required' => true],
+                ],
+            ],
+        ],
+    ]);
+    BotApiOperation::factory()->create([
+        'bot_id' => $bot->id,
+        'api_operation_id' => $operation->id,
+        'tool_name' => 'search_catalog',
         'is_enabled' => true,
     ]);
 

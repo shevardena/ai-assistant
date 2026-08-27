@@ -35,8 +35,9 @@ export default function BotEmbedCard({ widget }: { widget: BotWidget }) {
             <CardContent className="grid gap-3">
                 {!widget.ready ? (
                     <p className="text-sm text-muted-foreground">
-                        The Bot needs a ready Dataset and at least one allowed
-                        domain before it can answer publicly.
+                        The Bot needs a ready Dataset or live catalog operation
+                        and at least one allowed domain before it can answer
+                        publicly.
                     </p>
                 ) : null}
                 <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">

@@ -37,6 +37,12 @@ class BotCardTemplate extends Model
         return $this->belongsTo(Dataset::class);
     }
 
+    /** @return BelongsTo<ApiOperation, $this> */
+    public function apiOperation(): BelongsTo
+    {
+        return $this->belongsTo(ApiOperation::class);
+    }
+
     /**
      * Get the attributes that should be cast.
      *

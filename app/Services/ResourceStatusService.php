@@ -8,10 +8,15 @@ use App\Enums\DataSourceStatus;
 use App\Models\Bot;
 use App\Models\Dataset;
 use App\Models\DataSource;
+use App\Services\Api\LiveOperationCapabilityService;
 use Carbon\CarbonInterface;
 
 class ResourceStatusService
 {
+    public function __construct(
+        private readonly LiveOperationCapabilityService $liveOperations,
+    ) {}
+
     /**
      * Mark a source as actively importing or synchronizing.
      */
@@ -88,7 +93,7 @@ class ResourceStatusService
     }
 
     /**
-     * Recalculate a bot from its enabled, current-team, ready datasets.
+     * Recalculate a bot from its usable local datasets or live catalog operation.
      */
     public function refreshBotStatus(Bot $bot): void
     {
@@ -98,9 +103,10 @@ class ResourceStatusService
                 ->where('datasets.team_id', $bot->team_id)
                 ->where('datasets.status', DatasetStatus::Ready->value))
             ->exists();
+        $hasUsableLiveCatalog = $this->liveOperations->has($bot, 'search_catalog');
 
         $bot->forceFill([
-            'status' => $hasUsableDataset
+            'status' => $hasUsableDataset || $hasUsableLiveCatalog
                 ? BotStatus::Ready->value
                 : BotStatus::Draft->value,
         ])->save();

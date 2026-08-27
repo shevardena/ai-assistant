@@ -21,6 +21,7 @@ class BotCardTemplateFactory extends Factory
         return [
             'bot_id' => Bot::factory(),
             'dataset_id' => null,
+            'api_operation_id' => null,
             'name' => 'Default',
             'is_default' => false,
             'mapping' => [

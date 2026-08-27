@@ -139,6 +139,30 @@ test('missing dataset prerequisites are reported as unavailable', function () {
         ->and(capabilityByKey($groups, 'lookup_faq')['status'])->toBe('unavailable');
 });
 
+test('a valid live catalog operation satisfies catalog readiness without a dataset', function () {
+    [, $team] = capabilityContext();
+    $bot = Bot::factory()->create(['team_id' => $team->id]);
+    $attachment = attachCapabilityOperation(
+        $bot,
+        'search_catalog',
+        ApiOperationMode::Read->value,
+        [],
+        ['properties' => ['q' => ['type' => 'string']]],
+    );
+    $attachment->apiOperation->update([
+        'response_mapping' => [
+            'output' => [
+                'title' => ['path' => 'name'],
+            ],
+        ],
+    ]);
+
+    $capability = capabilityByKey(app(BotCapabilityService::class)->forBot($bot), 'search_catalog');
+
+    expect($capability['status'])->toBe('ready')
+        ->and($capability['details']['live'])->toBeTrue();
+});
+
 test('valid read operations are ready while disabled and write-mode stock attachments need configuration', function () {
     [, $team] = capabilityContext();
     $bot = Bot::factory()->create(['team_id' => $team->id]);

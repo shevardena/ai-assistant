@@ -58,7 +58,7 @@ export function datasetStatusVariant(
 export function statusDescription(status: string): string | null {
     return (
         {
-            draft: 'Add a ready Dataset to make this Bot usable.',
+            draft: 'Add a ready Dataset or live catalog operation to make this Bot usable.',
             ready: 'Ready to use.',
             pending: 'Waiting for a successful source import.',
             syncing: 'A source sync is currently running.',

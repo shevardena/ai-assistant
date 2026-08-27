@@ -249,12 +249,21 @@ class AiSearchOrchestrator
     }
 
     /**
-     * @param  list<array{dataset_id: int, record_ids: list<int>}>  $cardSources
+     * @param  list<array<string, mixed>>  $cardSources
      */
     private function appendCardSource(array &$cardSources, mixed $cardSource): void
     {
-        if (! is_array($cardSource)
-            || ! is_int($cardSource['dataset_id'] ?? null)
+        if (! is_array($cardSource)) {
+            return;
+        }
+
+        if (is_array($cardSource['live_items'] ?? null)) {
+            $cardSources[] = ['live_items' => $cardSource['live_items']];
+
+            return;
+        }
+
+        if (! is_int($cardSource['dataset_id'] ?? null)
             || ! is_array($cardSource['record_ids'] ?? null)) {
             return;
         }

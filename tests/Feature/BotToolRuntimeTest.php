@@ -1,15 +1,20 @@
 <?php
 
+use App\Enums\ApiOperationMode;
 use App\Enums\TeamRole;
+use App\Models\ApiOperation;
 use App\Models\Bot;
+use App\Models\BotApiOperation;
 use App\Models\BotDataset;
 use App\Models\Dataset;
+use App\Models\DataSource;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Ai\AiSearchOrchestrator;
 use App\Services\Ai\AiToolSchemaBuilder;
 use App\Services\Ai\BotToolRegistry;
 use App\Services\Ai\Contracts\AiClient;
+use App\Services\Ai\Tools\SearchCatalogTool;
 use App\Services\Ai\Tools\ToolResult;
 
 function botToolRegistryContext(bool $attachDataset = true): array
@@ -46,6 +51,65 @@ test('the registry resolves the dataset-backed tools for an eligible bot', funct
     expect($registry->forBot($botWithoutDataset))->toHaveCount(1)
         ->and($registry->find($botWithoutDataset, 'search_catalog'))->toBeNull()
         ->and($registry->find($botWithoutDataset, 'request_human_handoff'))->not->toBeNull();
+});
+
+test('the registry exposes catalog search for a valid live operation without a dataset', function () {
+    [, $team, $bot] = botToolRegistryContext(false);
+    $source = DataSource::factory()->create(['team_id' => $team->id, 'type' => 'rest_api', 'status' => 'pending']);
+    $operation = ApiOperation::factory()->create([
+        'data_source_id' => $source->id,
+        'execution_mode' => ApiOperationMode::Read->value,
+        'request_schema' => ['properties' => ['q' => ['type' => 'string']]],
+        'response_mapping' => ['output' => ['title' => ['path' => 'name']]],
+    ]);
+    BotApiOperation::factory()->create([
+        'bot_id' => $bot->id,
+        'api_operation_id' => $operation->id,
+        'tool_name' => 'search_catalog',
+        'is_enabled' => true,
+    ]);
+
+    $registry = app(BotToolRegistry::class);
+
+    expect($registry->find($bot, 'search_catalog'))->not->toBeNull()
+        ->and($registry->find($bot, 'get_product_details'))->toBeNull();
+});
+
+test('live catalog mappings translate canonical search arguments to common API parameter names', function () {
+    botToolRegistryContext(false);
+    $operation = ApiOperation::factory()->make([
+        'request_schema' => [
+            'properties' => [
+                'name' => ['type' => 'string'],
+                'category_name' => ['type' => 'string'],
+                'per_page' => ['type' => 'integer'],
+            ],
+        ],
+        'request_mapping' => [
+            'query' => [
+                'name' => 'name',
+                'category_name' => 'category_name',
+                'per_page' => 'per_page',
+            ],
+        ],
+    ]);
+    $method = new ReflectionMethod(SearchCatalogTool::class, 'liveArguments');
+
+    $arguments = $method->invoke(app(SearchCatalogTool::class), $operation, [
+        'text' => 'ბამპერის ბადე',
+        'filters' => [[
+            'field' => 'category',
+            'operator' => 'eq',
+            'value' => 'Toyota',
+        ]],
+        'limit' => 10,
+    ]);
+
+    expect($arguments)->toBe([
+        'name' => 'ბამპერის ბადე',
+        'category_name' => 'Toyota',
+        'per_page' => 10,
+    ]);
 });
 
 test('the registered tool produces a strict schema without internal implementation details', function () {

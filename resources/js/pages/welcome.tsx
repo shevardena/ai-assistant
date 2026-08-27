@@ -3,14 +3,17 @@ import { useEffect } from 'react';
 import { dashboard, login } from '@/routes';
 import { register } from '@/routes';
 
-const demoWidgetBotId = '606d2ac9-1e1a-4e02-983d-edcc054a12f2';
 const demoWidgetScriptId = 'welcome-demo-widget-script';
 
 export default function Welcome() {
-    const { auth, currentTeam } = usePage().props;
+    const { auth, currentTeam, demoWidgetBotId } = usePage().props;
     const dashboardUrl = currentTeam ? dashboard(currentTeam.slug) : '/';
 
     useEffect(() => {
+        if (!demoWidgetBotId) {
+            return;
+        }
+
         const existingScript = document.getElementById(demoWidgetScriptId);
 
         if (existingScript) {
@@ -31,7 +34,7 @@ export default function Welcome() {
                 .querySelector(`[data-mamos-widget="${demoWidgetBotId}"]`)
                 ?.remove();
         };
-    }, []);
+    }, [demoWidgetBotId]);
 
     return (
         <>

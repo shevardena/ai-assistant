@@ -3,7 +3,6 @@
 namespace App\Services\Api;
 
 use App\Enums\ApiOperationMode;
-use App\Enums\DataSourceStatus;
 use App\Models\Bot;
 use App\Models\BotApiOperation;
 use Illuminate\Database\Eloquent\Builder;
@@ -43,7 +42,7 @@ class RuntimeApiOperationResolver
                     ->whereHas('dataSource', fn (Builder $dataSource): Builder => $dataSource
                         ->where('team_id', $bot->team_id)
                         ->whereIn('type', ['rest_api', 'graphql_api'])
-                        ->where('status', DataSourceStatus::Ready->value));
+                        ->liveUsable());
             })
             ->with('apiOperation.dataSource.credentials')
             ->first();

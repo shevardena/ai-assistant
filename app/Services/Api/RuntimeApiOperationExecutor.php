@@ -4,6 +4,9 @@ namespace App\Services\Api;
 
 use App\Enums\ApiOperationMode;
 use App\Services\Api\Exceptions\GraphqlRequestException;
+use App\Services\Api\LiveRead\LiveReadQueryPlan;
+use App\Services\Api\LiveRead\LiveReadQueryPlanner;
+use App\Services\Api\LiveRead\LiveReadRecordMatcher;
 use App\Services\Imports\Exceptions\ImportException;
 use App\Services\Imports\RestApiRequestExecutor;
 use App\Services\Imports\SourcePathResolver;
@@ -47,6 +50,120 @@ class RuntimeApiOperationExecutor
     public function execute(RuntimeApiOperation $runtimeOperation, array $arguments): RuntimeApiResult
     {
         return $this->executeMode($runtimeOperation, $arguments, ApiOperationMode::Read, true);
+    }
+
+    /**
+     * Execute a bounded, already validated live-read plan. Pagination remains
+     * server-controlled so the model never receives cursors or next URLs.
+     */
+    public function executeLiveRead(
+        RuntimeApiOperation $runtimeOperation,
+        LiveReadQueryPlan $plan,
+    ): RuntimeApiResult {
+        try {
+            $this->assertUsable($runtimeOperation, ApiOperationMode::Read);
+            $this->validateArguments($runtimeOperation, $plan->remoteArguments);
+            $mapping = (array) $runtimeOperation->operation->response_mapping;
+            $fields = $this->mappedFieldNames($runtimeOperation);
+            $records = [];
+            $seen = [];
+            $pages = 0;
+            $candidates = 0;
+            $remoteMoreAvailable = false;
+            $moreAvailable = false;
+            $truncated = false;
+            $lastStatus = 200;
+            $nextUrl = null;
+            $page = $this->paginationStart($mapping);
+            $cursor = null;
+            $deadline = microtime(true) + max(1, (int) config('live-read.timeout_seconds', 15));
+
+            while ($pages < $plan->pageBudget && $candidates < $plan->candidateBudget && microtime(true) < $deadline) {
+                try {
+                    $response = $this->livePageResponse($runtimeOperation, $plan, $mapping, $nextUrl, $page, $cursor);
+                } catch (GraphqlRequestException|InvalidArgumentException|LogicException|ImportException|ConnectionException $exception) {
+                    if ($pages === 0) {
+                        throw $exception;
+                    }
+
+                    $truncated = true;
+                    $moreAvailable = true;
+                    break;
+                }
+                $lastStatus = $response['status'];
+                $pages++;
+                $collection = $this->responseCollection($mapping, $response['data']);
+                $remainingBudget = max(0, $plan->candidateBudget - $candidates);
+                $collectionWasClipped = count($collection) > $remainingBudget;
+                $candidates += min(count($collection), $remainingBudget);
+                $mapped = $this->mapResponse($runtimeOperation, $response['data'], min(count($collection), $remainingBudget));
+                $mapped = array_is_list($mapped) ? $mapped : [];
+
+                if ($collectionWasClipped) {
+                    $truncated = true;
+                    $moreAvailable = true;
+                }
+
+                foreach ($mapped as $record) {
+                    if (! is_array($record)) {
+                        continue;
+                    }
+                    $key = $this->recordKey($record);
+                    if (isset($seen[$key])) {
+                        continue;
+                    }
+                    $seen[$key] = true;
+                    if ($this->matchesMappedRecord($record, $plan->localFilters, $fields)
+                        && app(LiveReadRecordMatcher::class)->matchesSearchText($record, $plan->localSearchText, $fields)) {
+                        $records[] = $record;
+                    }
+                }
+
+                [$remoteMoreAvailable, $nextUrl, $page, $cursor] = $this->nextLivePosition($mapping, $response['data'], $page, $cursor);
+                $moreAvailable = $moreAvailable || count($collection) > $plan->effectiveResultLimit || $remoteMoreAvailable;
+                $canStop = count($records) >= $plan->requestedMinimum && ! $plan->requiresCompleteOrdering;
+                if ($canStop || ! $remoteMoreAvailable) {
+                    break;
+                }
+
+                if ($collectionWasClipped || $candidates >= $plan->candidateBudget || $pages >= $plan->pageBudget || microtime(true) >= $deadline) {
+                    $truncated = $remoteMoreAvailable;
+                    break;
+                }
+            }
+
+            if ($candidates > $plan->candidateBudget) {
+                $truncated = true;
+                $moreAvailable = true;
+            }
+
+            if ($remoteMoreAvailable && ($pages >= $plan->pageBudget || $candidates >= $plan->candidateBudget || microtime(true) >= $deadline)) {
+                $truncated = true;
+            }
+
+            if ($plan->localSorts !== []) {
+                $records = app(LiveReadRecordMatcher::class)->sort($records, $plan->localSorts);
+            }
+            $records = array_slice($records, 0, $plan->effectiveResultLimit);
+
+            return RuntimeApiResult::success([
+                'records' => $records,
+                'meta' => [
+                    'complete' => ! $truncated && ! $remoteMoreAvailable,
+                    'truncated' => $truncated,
+                    'more_available' => $moreAvailable,
+                    'pages_fetched' => $pages,
+                    'candidates_examined' => min($candidates, $plan->candidateBudget),
+                    'effective_result_limit' => $plan->effectiveResultLimit,
+                    'count_requirement_satisfied' => count($records) >= $plan->requestedMinimum,
+                    'confirmed_empty' => $records === [] && ! $truncated && ! $remoteMoreAvailable,
+                ],
+            ], $lastStatus);
+        } catch (GraphqlRequestException $exception) {
+            return RuntimeApiResult::failure($exception->errorType, 'The integration request could not be completed safely.');
+        } catch (InvalidArgumentException|LogicException|ImportException|ConnectionException) {
+            return RuntimeApiResult::failure('integration_error', 'The integration request could not be completed safely.');
+        }
     }
 
     /**
@@ -122,13 +239,37 @@ class RuntimeApiOperationExecutor
                 );
             }
         } catch (GraphqlRequestException $exception) {
+            logger()->notice('Runtime API operation request was rejected.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'phase' => 'build',
+                'exception' => $exception::class,
+            ]);
+
             return RuntimeApiResult::failure($exception->errorType, 'The GraphQL operation is not configured correctly.');
-        } catch (InvalidArgumentException) {
+        } catch (InvalidArgumentException $exception) {
+            logger()->notice('Runtime API operation request was rejected.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'phase' => 'validation',
+                'exception' => $exception::class,
+            ]);
+
             return RuntimeApiResult::failure(
                 'invalid_request',
                 'The integration request arguments are invalid.',
             );
-        } catch (LogicException|ImportException) {
+        } catch (LogicException|ImportException $exception) {
+            logger()->notice('Runtime API operation request was rejected.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'phase' => 'build',
+                'exception' => $exception::class,
+            ]);
+
             return RuntimeApiResult::failure(
                 'integration_error',
                 'The integration operation is not configured correctly.',
@@ -136,6 +277,18 @@ class RuntimeApiOperationExecutor
         }
 
         try {
+            logger()->info('Runtime API operation search started.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'source_id' => $runtimeOperation->dataSource->id,
+                'source_type' => $runtimeOperation->dataSource->type,
+                'method' => is_array($request) ? $request['method'] : 'GRAPHQL',
+                'url' => is_array($request) ? $request['url'] : null,
+                'query_keys' => is_array($request) ? array_keys($request['query']) : [],
+                'body_keys' => is_array($request) ? array_keys($request['body']) : [],
+            ]);
+
             $response = $runtimeOperation->dataSource->type === 'graphql_api'
                 ? $this->graphqlRequestExecutor->execute(
                     $runtimeOperation->operation,
@@ -155,13 +308,49 @@ class RuntimeApiOperationExecutor
                     idempotencyKey: $idempotencyKey,
                 );
 
+            logger()->info('Runtime API operation response received.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'status' => $response['status'],
+                'response_keys' => array_keys($response['data']),
+                'response_is_list' => array_is_list($response['data']),
+                'response_item_count' => array_is_list($response['data']) ? count($response['data']) : null,
+            ]);
+
+            $mappedResponse = $this->mapResponse($runtimeOperation, $response['data']);
+
+            logger()->info('Runtime API operation response mapped.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'status' => $response['status'],
+                'mapped_keys' => array_keys($mappedResponse),
+                'mapped_is_list' => array_is_list($mappedResponse),
+                'mapped_item_count' => array_is_list($mappedResponse) ? count($mappedResponse) : null,
+            ]);
+
             return RuntimeApiResult::success(
-                $this->mapResponse($runtimeOperation, $response['data']),
+                $mappedResponse,
                 $response['status'],
             );
         } catch (GraphqlRequestException $exception) {
+            logger()->warning('Runtime API operation GraphQL request failed.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'exception' => $exception::class,
+            ]);
+
             return RuntimeApiResult::failure($exception->errorType, 'The GraphQL operation could not be completed safely.');
-        } catch (InvalidArgumentException|LogicException) {
+        } catch (InvalidArgumentException|LogicException $exception) {
+            logger()->warning('Runtime API operation response mapping failed.', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation' => $runtimeOperation->operation->key,
+                'exception' => $exception::class,
+            ]);
+
             return RuntimeApiResult::failure(
                 'integration_error',
                 'The integration response could not be normalized safely.',
@@ -183,11 +372,16 @@ class RuntimeApiOperationExecutor
                 'The integration is temporarily unavailable.',
             );
         } catch (ImportException $exception) {
+            $previousException = $exception->getPrevious();
+
             logger()->warning('Runtime API operation failed.', [
                 'bot_id' => $runtimeOperation->bot->id,
                 'team_id' => $runtimeOperation->bot->team_id,
                 'operation' => $runtimeOperation->operation->key,
                 'exception' => $exception::class,
+                'reason' => $exception->getMessage(),
+                'previous_exception' => $previousException instanceof Throwable ? $previousException::class : null,
+                'previous_message' => $previousException?->getMessage(),
             ]);
 
             return RuntimeApiResult::failure(
@@ -504,7 +698,7 @@ class RuntimeApiOperationExecutor
      * @param  array<string, mixed>  $response
      * @return array<int|string, mixed>
      */
-    private function mapResponse(RuntimeApiOperation $runtimeOperation, array $response): array
+    private function mapResponse(RuntimeApiOperation $runtimeOperation, array $response, ?int $collectionLimit = null): array
     {
         $mapping = $runtimeOperation->operation->getAttribute('response_mapping');
 
@@ -513,7 +707,7 @@ class RuntimeApiOperationExecutor
                 throw new LogicException('The response mapping cannot mix collection and scalar output.');
             }
 
-            return $this->mapCollection($mapping['collection'], $response);
+            return $this->mapCollection($mapping['collection'], $response, $collectionLimit);
         }
 
         $output = is_array($mapping) ? ($mapping['output'] ?? $mapping['fields'] ?? null) : null;
@@ -579,7 +773,7 @@ class RuntimeApiOperationExecutor
      * @param  array<string, mixed>  $response
      * @return list<array<string, scalar|null>>
      */
-    private function mapCollection(mixed $definition, array $response): array
+    private function mapCollection(mixed $definition, array $response, ?int $collectionLimit = null): array
     {
         if (! is_array($definition)
             || ! is_string($definition['path'] ?? null)
@@ -595,7 +789,9 @@ class RuntimeApiOperationExecutor
             throw new LogicException('The response collection limit is invalid.');
         }
 
-        $limit = min($configuredLimit, self::MAX_MAPPED_COLLECTION_ITEMS);
+        $limit = $collectionLimit === null
+            ? min($configuredLimit, self::MAX_MAPPED_COLLECTION_ITEMS)
+            : max(0, $collectionLimit);
         $collection = $this->sourcePathResolver->get($response, $definition['path']);
 
         if ($collection === null) {
@@ -669,6 +865,131 @@ class RuntimeApiOperationExecutor
         }
     }
 
+    /** @param array<string, mixed> $mapping @return array<string, array<string, mixed>> */
+    private function mappedFieldNames(RuntimeApiOperation $runtimeOperation): array
+    {
+        return app(LiveReadQueryPlanner::class)->fields($runtimeOperation->operation);
+    }
+
+    /** @param array<string, mixed> $mapping */
+    private function paginationStart(array $mapping): int
+    {
+        $pagination = (array) ($mapping['pagination'] ?? []);
+
+        return max(1, (int) ($pagination['start'] ?? 1));
+    }
+
+    /** @param array<string, mixed> $mapping @param array<string, mixed> $response */
+    private function responseCollection(array $mapping, array $response): array
+    {
+        $definition = is_array($mapping['collection'] ?? null) ? $mapping['collection'] : null;
+        $path = is_string($definition['path'] ?? null) ? $definition['path'] : ($mapping['records_path'] ?? 'root');
+        $value = $this->sourcePathResolver->get($response, (string) $path);
+
+        if ($value === null) {
+            return [];
+        }
+        if (! is_array($value)) {
+            throw new LogicException('The live response collection is not an array.');
+        }
+
+        return array_values(array_filter($value, 'is_array'));
+    }
+
+    /** @param array<string, mixed> $mapping */
+    private function livePageResponse(
+        RuntimeApiOperation $runtimeOperation,
+        LiveReadQueryPlan $plan,
+        array $mapping,
+        ?string $nextUrl,
+        int $page,
+        mixed $cursor,
+    ): array {
+        if ($runtimeOperation->dataSource->type === 'graphql_api') {
+            $pagination = (array) ($mapping['pagination'] ?? []);
+            $cursorVariable = $pagination['cursor_variable'] ?? $pagination['variable'] ?? null;
+            $overrides = is_string($cursorVariable) && $cursor !== null ? [$cursorVariable => $cursor] : [];
+
+            return $this->graphqlRequestExecutor->execute(
+                $runtimeOperation->operation,
+                $runtimeOperation->dataSource,
+                $plan->remoteArguments,
+                variableOverrides: $overrides,
+            );
+        }
+
+        $request = $nextUrl !== null
+            ? ['method' => Str::upper((string) $runtimeOperation->operation->method), 'url' => $nextUrl, 'query' => [], 'body' => []]
+            : $this->request($runtimeOperation, $plan->remoteArguments);
+        $pagination = (array) ($mapping['pagination'] ?? []);
+        if (($pagination['type'] ?? null) === 'page' && $nextUrl === null) {
+            $parameter = (string) ($pagination['parameter'] ?? 'page');
+            $request['query'][$parameter] = $page;
+        }
+        foreach ($plan->remoteSorts as $sort) {
+            $remote = $sort['remote'] ?? null;
+            if (is_array($remote) && is_string($remote['parameter'] ?? null)) {
+                $request['query'][$remote['parameter']] = $remote['value'] ?? $sort['field'].'_'.$sort['direction'];
+            } elseif (is_string($remote) && $remote !== '') {
+                $request['query'][$remote] = $sort['field'].'_'.$sort['direction'];
+            }
+        }
+
+        return $this->requestExecutor->executeRequest(
+            $runtimeOperation->operation,
+            $runtimeOperation->dataSource,
+            $request['method'],
+            $request['url'],
+            $request['query'],
+            $request['body'],
+        );
+    }
+
+    /** @param array<string, mixed> $mapping @param array<string, mixed> $response @return array{0: bool, 1: ?string, 2: int, 3: mixed} */
+    private function nextLivePosition(array $mapping, array $response, int $page, mixed $cursor): array
+    {
+        $pagination = (array) ($mapping['pagination'] ?? []);
+        $type = (string) ($pagination['type'] ?? 'none');
+        if ($type === 'next_url') {
+            $next = $this->sourcePathResolver->get($response, (string) ($pagination['next_path'] ?? ''));
+
+            return [is_string($next) && $next !== '', is_string($next) && $next !== '' ? $next : null, $page, $cursor];
+        }
+        if ($type === 'page') {
+            $current = $this->sourcePathResolver->get($response, (string) ($pagination['current_path'] ?? 'meta.current_page'));
+            $last = $this->sourcePathResolver->get($response, (string) ($pagination['last_path'] ?? 'meta.last_page'));
+            $hasNext = is_numeric($current) && is_numeric($last) ? (int) $current < (int) $last : count($this->responseCollection($mapping, $response)) > 0;
+
+            return [$hasNext, null, $page + 1, $cursor];
+        }
+        if ($type === 'relay_cursor') {
+            $hasNext = (bool) $this->sourcePathResolver->get($response, (string) ($pagination['has_next_path'] ?? 'pageInfo.hasNextPage'));
+            $nextCursor = $this->sourcePathResolver->get($response, (string) ($pagination['cursor_path'] ?? 'pageInfo.endCursor'));
+
+            return [$hasNext && $nextCursor !== null, null, $page, $nextCursor];
+        }
+
+        return [false, null, $page, $cursor];
+    }
+
+    /** @param array<string, mixed> $record @param list<array<string, mixed>> $filters @param array<string, array<string, mixed>> $fields */
+    private function matchesMappedRecord(array $record, array $filters, array $fields): bool
+    {
+        return app(LiveReadRecordMatcher::class)->matches($record, $filters, $fields);
+    }
+
+    /** @param array<string, mixed> $record */
+    private function recordKey(array $record): string
+    {
+        foreach (['id', 'key', 'code', 'reference'] as $field) {
+            if (isset($record[$field]) && is_scalar($record[$field])) {
+                return $field.':'.(string) $record[$field];
+            }
+        }
+
+        return 'hash:'.sha1(json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: serialize($record));
+    }
+
     /**
      * @return array{0: string, 1: bool}
      */
@@ -681,7 +1002,7 @@ class RuntimeApiOperationExecutor
         if (is_array($definition)
             && is_string($definition['path'] ?? null)
             && $definition['path'] !== '') {
-            return [$definition['path'], (bool) ($definition['required'] ?? true)];
+            return [$definition['path'], (bool) ($definition['required'] ?? false)];
         }
 
         throw new LogicException('The response output mapping is invalid.');

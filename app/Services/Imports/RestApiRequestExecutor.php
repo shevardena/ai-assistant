@@ -7,6 +7,7 @@ use App\Models\DataSource;
 use App\Models\DataSourceCredential;
 use App\Services\Imports\Exceptions\ImportException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -47,8 +48,8 @@ class RestApiRequestExecutor
         ?string $idempotencyKey = null,
         ?array $credentialOverrides = null,
     ): array {
-        if ($dataSource->type !== 'rest_api') {
-            throw new ImportException('Only REST API data sources can execute API operations.');
+        if (! in_array($dataSource->type, ['rest_api', 'graphql_api'], true)) {
+            throw new ImportException('Only HTTP API data sources can execute requests.');
         }
 
         $method = Str::upper($method);
@@ -123,15 +124,87 @@ class RestApiRequestExecutor
         }
 
         try {
+            logger()->info('REST API request started.', [
+                'operation_id' => $operation->id,
+                'operation' => $operation->key,
+                'source_id' => $dataSource->id,
+                'method' => Str::upper($method),
+                'url' => $url,
+                'query_keys' => array_keys($query),
+                'payload_keys' => array_keys($payload),
+            ]);
+
             $response = $request->send(Str::upper($method), $url, $options);
         } catch (ConnectionException $exception) {
+            logger()->warning('REST API request could not connect.', [
+                'operation_id' => $operation->id,
+                'operation' => $operation->key,
+                'source_id' => $dataSource->id,
+                'method' => Str::upper($method),
+                'url' => $url,
+                'exception' => $exception::class,
+                'transport_error' => Str::limit($exception->getMessage(), 500),
+            ]);
+
             throw new ImportException(
                 'The API server could not be reached. Check the production server DNS, firewall, TLS certificate, and outbound HTTPS access.',
                 previous: $exception,
             );
+        } catch (RequestException $exception) {
+            $status = $exception->response->status();
+
+            logger()->warning('REST API request returned an unsuccessful status.', [
+                'operation_id' => $operation->id,
+                'operation' => $operation->key,
+                'source_id' => $dataSource->id,
+                'method' => Str::upper($method),
+                'url' => $url,
+                'status' => $status,
+                'exception' => $exception::class,
+            ]);
+
+            throw new ImportException(
+                "The API request returned HTTP {$status}.",
+                previous: $exception,
+            );
         }
 
-        return $this->parseResponse($response, $url);
+        logger()->info('REST API response received.', [
+            'operation_id' => $operation->id,
+            'operation' => $operation->key,
+            'source_id' => $dataSource->id,
+            'status' => $response->status(),
+            'content_type' => $response->header('content-type'),
+            'content_length' => $response->header('content-length'),
+        ]);
+
+        $maxLiveResponseBytes = data_get($operation->response_mapping, 'sync_mode') === 'full_snapshot'
+            ? 0
+            : max(0, (int) config('live-read.max_response_bytes', 5 * 1024 * 1024));
+        $contentLength = $response->header('content-length');
+        if ($maxLiveResponseBytes > 0 && is_numeric($contentLength) && (int) $contentLength > $maxLiveResponseBytes) {
+            throw new ImportException('The live API response exceeds the configured safety limit.');
+        }
+
+        try {
+            $result = $this->parseResponse($response, $url);
+            if ($maxLiveResponseBytes > 0 && strlen($response->body()) > $maxLiveResponseBytes) {
+                throw new ImportException('The live API response exceeds the configured safety limit.');
+            }
+
+            return $result;
+        } catch (ImportException $exception) {
+            logger()->warning('REST API response was rejected.', [
+                'operation_id' => $operation->id,
+                'operation' => $operation->key,
+                'source_id' => $dataSource->id,
+                'status' => $response->status(),
+                'reason' => $exception->getMessage(),
+                'exception' => $exception::class,
+            ]);
+
+            throw $exception;
+        }
     }
 
     /**

@@ -3,17 +3,22 @@
 namespace App\Services\Onboarding;
 
 use App\Enums\ChannelConnectionStatus;
+use App\Enums\TemplateDataMode;
 use App\Enums\TemplateRequirementType;
 use App\Enums\TemplateSetupAction;
 use App\Enums\TemplateSupportStatus;
 use App\Models\Bot;
 use App\Models\Dataset;
 use App\Services\Ai\BotCapabilityService;
+use App\Services\Api\LiveOperationCapabilityService;
 use Illuminate\Support\Str;
 
 final class BusinessTemplateSetupService
 {
-    public function __construct(private readonly BotCapabilityService $capabilities) {}
+    public function __construct(
+        private readonly BotCapabilityService $capabilities,
+        private readonly LiveOperationCapabilityService $liveOperations,
+    ) {}
 
     /**
      * Resolve a safe, actionable setup plan from the Bot's current state.
@@ -135,6 +140,19 @@ final class BusinessTemplateSetupService
 
         if (in_array($definition->type, [TemplateRequirementType::Catalog, TemplateRequirementType::Knowledge], true)) {
             $dataset = $this->matchingDataset($bot, $definition);
+
+            $liveReady = $definition->type === TemplateRequirementType::Catalog
+                && $definition->dataMode !== TemplateDataMode::Synced
+                && $this->liveOperations->has($bot, 'search_catalog');
+
+            if ($liveReady) {
+                return [
+                    'status' => 'ready',
+                    'messageKey' => 'templates.status.ready',
+                    'reasonKey' => 'templates.status.connected',
+                    'dataset' => $dataset,
+                ];
+            }
 
             if (! $dataset instanceof Dataset) {
                 return [

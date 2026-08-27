@@ -396,10 +396,13 @@ class WidgetApiController extends Controller
 
     private function usableBot(string $publicId): Bot
     {
-        return Bot::query()
+        $bot = Bot::query()
             ->where('public_id', $publicId)
-            ->publiclyAvailable()
             ->firstOrFail();
+
+        abort_unless($this->availability->isOnline($bot), 404);
+
+        return $bot;
     }
 
     private function authorizeOrigin(Request $request, Bot $bot): void

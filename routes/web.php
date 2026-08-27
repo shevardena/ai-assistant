@@ -50,8 +50,14 @@ use App\Http\Middleware\EnsureTeamMembership;
 use App\Http\Middleware\SetUserLocale;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+use Inertia\Response;
 
-Route::inertia('/', 'welcome')->name('home');
+Route::get('/', function (): Response {
+    return Inertia::render('welcome', [
+        'demoWidgetBotId' => config('widget.demo_bot_id'),
+    ]);
+})->name('home');
 Route::get('widget.js', WidgetAssetController::class)->name('widget.asset');
 Route::get('widget/{botPublicId}', [PublicWidgetController::class, 'show'])->name('widget.show');
 Route::post('stripe/webhook', StripeWebhookController::class)

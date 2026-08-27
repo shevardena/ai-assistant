@@ -344,6 +344,26 @@ class ApiConnectionBuilderService
             $this->addParameter($row, $properties, $required, $requestMapping, 'body');
         }
 
+        if (is_array($input['live_query'] ?? null)) {
+            $liveQuery = $input['live_query'];
+            $searchText = trim((string) ($liveQuery['search_text'] ?? ''));
+            if ($searchText !== '') {
+                $requestMapping['live_query']['search_text'] = $searchText;
+            }
+
+            foreach ((array) ($liveQuery['filters'] ?? []) as $filter) {
+                if (! is_array($filter)) {
+                    continue;
+                }
+                $field = (string) ($filter['field'] ?? '');
+                $operator = (string) ($filter['operator'] ?? '');
+                $remote = trim((string) ($filter['remote'] ?? ''));
+                if ($field !== '' && $operator !== '' && $remote !== '') {
+                    $requestMapping['live_query']['filters'][$field][$operator] = $remote;
+                }
+            }
+        }
+
         $responseMapping = is_array($input['response_mapping'] ?? null) ? $input['response_mapping'] : [];
 
         if ($mode === 'synced') {
@@ -512,7 +532,19 @@ class ApiConnectionBuilderService
             $path = (string) ($field['path'] ?? '');
 
             if ($name !== '' && $path !== '') {
-                $output[$name] = ['path' => $path, 'required' => (bool) ($field['required'] ?? true)];
+                $supportedTypes = ['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'];
+                $type = (string) ($field['type'] ?? 'string');
+                $normalizedType = in_array($type, $supportedTypes, true) ? $type : 'string';
+
+                $output[$name] = [
+                    'path' => $path,
+                    'required' => (bool) ($field['required'] ?? true),
+                    'type' => $normalizedType,
+                    'searchable' => (bool) ($field['searchable'] ?? in_array($normalizedType, ['string', 'date', 'datetime'], true)),
+                    'filterable' => (bool) ($field['filterable'] ?? true),
+                    'sortable' => (bool) ($field['sortable'] ?? in_array($normalizedType, ['string', 'integer', 'decimal', 'date', 'datetime'], true)),
+                    'displayable' => (bool) ($field['displayable'] ?? true),
+                ];
             }
         }
 

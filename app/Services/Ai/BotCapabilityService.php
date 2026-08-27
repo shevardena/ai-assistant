@@ -8,6 +8,7 @@ use App\Models\Bot;
 use App\Models\BotApiOperation;
 use App\Models\Dataset;
 use App\Models\DataSource;
+use App\Services\Api\LiveOperationCapabilityService;
 use Illuminate\Database\Eloquent\Collection;
 
 class BotCapabilityService
@@ -22,7 +23,10 @@ class BotCapabilityService
      */
     private const KNOWLEDGE_TYPES = ['faq', 'knowledge'];
 
-    public function __construct(private readonly BotToolRegistry $toolRegistry) {}
+    public function __construct(
+        private readonly BotToolRegistry $toolRegistry,
+        private readonly LiveOperationCapabilityService $liveOperations,
+    ) {}
 
     /**
      * Build the safe, customer-facing capability summary for a Bot.
@@ -82,7 +86,9 @@ class BotCapabilityService
     {
         $relevantDatasets = $this->attachedDatasets($bot, $entityTypes);
         $readyDatasets = $this->attachedDatasets($bot, $entityTypes, true, $requiresDisplayableField);
-        $isReady = $readyDatasets->isNotEmpty() && isset($availableTools[$key]);
+        $liveReady = $key === 'search_catalog'
+            && $this->liveOperations->has($bot, $key);
+        $isReady = ($readyDatasets->isNotEmpty() || $liveReady) && isset($availableTools[$key]);
 
         return [
             'key' => $key,
@@ -92,9 +98,12 @@ class BotCapabilityService
             'status' => $isReady ? 'ready' : ($relevantDatasets->isNotEmpty() ? 'needs_configuration' : 'unavailable'),
             'statusMessage' => $isReady
                 ? 'Available to the assistant.'
-                : ($relevantDatasets->isNotEmpty() ? 'Attach a ready dataset with the required fields.' : 'Attach a compatible dataset to enable this capability.'),
+                : ($relevantDatasets->isNotEmpty() || $liveReady ? 'Complete the dataset or live operation configuration.' : 'Attach a compatible dataset or live operation to enable this capability.'),
             'requiresConfirmation' => false,
-            'details' => ['datasets' => $this->datasetDetails($isReady ? $readyDatasets : $relevantDatasets)],
+            'details' => [
+                'datasets' => $this->datasetDetails($isReady ? $readyDatasets : $relevantDatasets),
+                'live' => $liveReady,
+            ],
             'configureUrl' => route('bots.show', ['current_team' => $bot->team->slug, 'bot' => $bot]),
             'configureLabel' => 'Manage datasets',
         ];

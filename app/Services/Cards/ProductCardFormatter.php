@@ -79,6 +79,22 @@ class ProductCardFormatter
                 break;
             }
 
+            if (is_array($source['live_items'] ?? null)) {
+                foreach (array_slice($source['live_items'], 0, $maximum - count($cards)) as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+
+                    $card = $this->formatLiveItem($bot, $item);
+
+                    if ($card instanceof ProductCard) {
+                        $cards[] = $card->toArray();
+                    }
+                }
+
+                continue;
+            }
+
             $dataset = $bot->datasets()
                 ->wherePivot('is_enabled', true)
                 ->where('datasets.team_id', $bot->team_id)
@@ -125,6 +141,59 @@ class ProductCardFormatter
         }
 
         return $cards;
+    }
+
+    /**
+     * Format an already normalized product returned by a live operation.
+     * Live responses never need a local Dataset or a Typesense record.
+     *
+     * @param  array<string, mixed>  $item
+     */
+    private function formatLiveItem(Bot $bot, array $item): ?ProductCard
+    {
+        $title = $this->stringValue($item['title'] ?? null);
+
+        if ($title === null) {
+            return null;
+        }
+
+        $price = $this->primitiveValue($item['price'] ?? null);
+        $oldPrice = $this->primitiveValue($item['old_price'] ?? null);
+
+        if (! is_numeric($price) || ! is_numeric($oldPrice) || (float) $oldPrice <= (float) $price) {
+            $oldPrice = null;
+        }
+
+        $template = $bot->cardTemplates()->whereNull('dataset_id')->first();
+
+        return new ProductCard(
+            id: (string) ($item['id'] ?? sha1($title)),
+            image: $this->safeUrl($item['image_url'] ?? null),
+            title: $title,
+            subtitle: $this->stringValue($item['subtitle'] ?? null),
+            description: $this->stringValue($item['description'] ?? null),
+            price: $price,
+            oldPrice: $oldPrice,
+            discount: $this->primitiveValue($item['discount'] ?? null),
+            url: $this->safeUrl($item['product_url'] ?? null),
+            buttonLabel: $this->stringValue(data_get($template?->layout, 'button_label')) ?? 'View product',
+            styles: $template instanceof BotCardTemplate ? $this->styles($template) : $this->defaultStyles(),
+        );
+    }
+
+    /** @return array{background_color: string, text_color: string, muted_text_color: string, price_color: string, old_price_color: string, discount_color: string, button_color: string, button_text_color: string} */
+    private function defaultStyles(): array
+    {
+        return [
+            'background_color' => '#ffffff',
+            'text_color' => '#171717',
+            'muted_text_color' => '#737373',
+            'price_color' => '#7c3aed',
+            'old_price_color' => '#737373',
+            'discount_color' => '#7c3aed',
+            'button_color' => '#171717',
+            'button_text_color' => '#ffffff',
+        ];
     }
 
     /**

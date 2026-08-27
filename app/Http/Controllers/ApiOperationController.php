@@ -11,12 +11,14 @@ use App\Http\Requests\UpdateApiOperationRequest;
 use App\Http\Requests\UpdateApiOperationSyncScheduleRequest;
 use App\Jobs\RunApiOperationSync;
 use App\Models\ApiOperation;
+use App\Models\Bot;
 use App\Models\DataSource;
 use App\Models\Team;
 use App\Services\Ai\BotToolRegistry;
 use App\Services\Api\ApiConnectionBuilderService;
 use App\Services\Api\Exceptions\GraphqlRequestException;
 use App\Services\Imports\Exceptions\ImportException;
+use App\Services\ResourceStatusService;
 use App\Services\Sync\ApiOperationSyncScheduleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -32,6 +34,7 @@ class ApiOperationController extends Controller
         private readonly ApiConnectionBuilderService $builder,
         private readonly BotToolRegistry $tools,
         private readonly ApiOperationSyncScheduleService $syncSchedules,
+        private readonly ResourceStatusService $resourceStatuses,
     ) {}
 
     public function create(Request $request, Team $currentTeam, DataSource $dataSource): Response
@@ -47,6 +50,12 @@ class ApiOperationController extends Controller
                     'name' => $dataSource->name,
                     'config' => $this->safeConfig($dataSource->config),
                 ],
+                'bots' => $currentTeam->bots()
+                    ->orderBy('name')
+                    ->get(['id', 'name'])
+                    ->map(fn (Bot $bot): array => ['id' => $bot->id, 'name' => $bot->name])
+                    ->values()
+                    ->all(),
                 'templateContext' => $this->templateContext($request, $currentTeam),
             ]);
     }
@@ -69,6 +78,12 @@ class ApiOperationController extends Controller
                     'name' => $dataSource->name,
                     'config' => $this->safeConfig($dataSource->config),
                 ],
+                'bots' => $currentTeam->bots()
+                    ->orderBy('name')
+                    ->get(['id', 'name'])
+                    ->map(fn (Bot $bot): array => ['id' => $bot->id, 'name' => $bot->name])
+                    ->values()
+                    ->all(),
                 'operation' => [
                     'id' => $apiOperation->id,
                     'key' => $apiOperation->key,
@@ -82,11 +97,31 @@ class ApiOperationController extends Controller
                     'headers' => collect($apiOperation->headers ?? [])->map(fn ($value, $name): array => ['name' => $name, 'value' => $value])->values()->all(),
                     'query_parameters' => $this->operationParameterRows($apiOperation, 'query'),
                     'body_parameters' => $this->operationParameterRows($apiOperation, 'body'),
-                    'response_fields' => collect(data_get($apiOperation->response_mapping, 'output', []))->map(fn (array $field, string $name): array => [
-                        'name' => $name,
-                        'path' => (string) ($field['path'] ?? ''),
-                        'required' => (bool) ($field['required'] ?? false),
-                    ])->values()->all(),
+                    'response_fields' => collect(data_get($apiOperation->response_mapping, 'output', []))->map(function (mixed $field, string $name): array {
+                        $field = is_array($field) ? $field : ['path' => (string) $field];
+
+                        return [
+                            'name' => $name,
+                            'path' => (string) ($field['path'] ?? ''),
+                            'required' => (bool) ($field['required'] ?? false),
+                            'type' => (string) ($field['type'] ?? 'string'),
+                            'searchable' => (bool) ($field['searchable'] ?? (($field['type'] ?? 'string') === 'string')),
+                            'filterable' => (bool) ($field['filterable'] ?? true),
+                            'sortable' => (bool) ($field['sortable'] ?? in_array($field['type'] ?? 'string', ['string', 'integer', 'decimal', 'date', 'datetime'], true)),
+                            'displayable' => (bool) ($field['displayable'] ?? true),
+                        ];
+                    })->values()->all(),
+                    'response_mapping' => $apiOperation->response_mapping,
+                    'live_query' => [
+                        'search_text' => (string) data_get($apiOperation->request_mapping, 'live_query.search_text', ''),
+                        'filters' => collect(data_get($apiOperation->request_mapping, 'live_query.filters', []))
+                            ->flatMap(fn (array $operators, string $field): array => collect($operators)->map(fn (string $remote, string $operator): array => [
+                                'field' => $field,
+                                'operator' => $operator,
+                                'remote' => $remote,
+                            ])->all())
+                            ->values()->all(),
+                    ],
                     'pagination' => data_get($apiOperation->response_mapping, 'pagination', ['type' => 'none']),
                     'timeout_ms' => $apiOperation->timeout_ms,
                     'is_enabled' => $apiOperation->is_enabled,
@@ -174,6 +209,7 @@ class ApiOperationController extends Controller
         $operation = $dataSource->apiOperations()->create($values);
         $this->attachCapability($request, $currentTeam, $operation);
         $this->syncScheduleForOperation($operation);
+        $this->refreshTeamBotStatuses($currentTeam);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('API operation created.')]);
 
@@ -193,6 +229,7 @@ class ApiOperationController extends Controller
         $apiOperation->update($values);
         $this->attachCapability($request, $currentTeam, $apiOperation);
         $this->syncScheduleForOperation($apiOperation);
+        $this->refreshTeamBotStatuses($currentTeam);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('API operation updated.')]);
 
@@ -208,6 +245,7 @@ class ApiOperationController extends Controller
         $this->ensureSupportedApi($dataSource);
         abort_unless($apiOperation->data_source_id === $dataSource->id, 404);
         $apiOperation->delete();
+        $this->refreshTeamBotStatuses($currentTeam);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('API operation deleted.')]);
 
@@ -405,6 +443,13 @@ class ApiOperationController extends Controller
                 ],
             ],
         );
+    }
+
+    private function refreshTeamBotStatuses(Team $team): void
+    {
+        foreach ($team->bots()->get() as $bot) {
+            $this->resourceStatuses->refreshBotStatus($bot);
+        }
     }
 
     /**

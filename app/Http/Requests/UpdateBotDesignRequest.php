@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\ApiOperationMode;
 use App\Models\Bot;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -46,15 +47,17 @@ class UpdateBotDesignRequest extends FormRequest
             'remove_avatar' => ['nullable', 'boolean'],
             'welcome_message' => ['nullable', 'string', 'max:1000'],
             'dataset_id' => ['nullable', 'integer', 'min:1'],
+            'product_source' => ['nullable', 'in:dataset,live'],
+            'live_operation_id' => ['nullable', 'integer', 'min:1'],
             'mapping' => ['nullable', 'array'],
-            'mapping.title' => ['required_with:dataset_id', 'integer', 'min:1'],
-            'mapping.subtitle' => ['nullable', 'integer', 'min:1'],
-            'mapping.description' => ['nullable', 'integer', 'min:1'],
-            'mapping.image' => ['nullable', 'integer', 'min:1'],
-            'mapping.price' => ['nullable', 'integer', 'min:1'],
-            'mapping.old_price' => ['nullable', 'integer', 'min:1'],
-            'mapping.discount' => ['nullable', 'integer', 'min:1'],
-            'mapping.url' => ['nullable', 'integer', 'min:1'],
+            'mapping.title' => ['required_with:dataset_id,live_operation_id', 'nullable', 'string', 'max:120'],
+            'mapping.subtitle' => ['nullable', 'string', 'max:120'],
+            'mapping.description' => ['nullable', 'string', 'max:120'],
+            'mapping.image' => ['nullable', 'string', 'max:120'],
+            'mapping.price' => ['nullable', 'string', 'max:120'],
+            'mapping.old_price' => ['nullable', 'string', 'max:120'],
+            'mapping.discount' => ['nullable', 'string', 'max:120'],
+            'mapping.url' => ['nullable', 'string', 'max:120'],
             'button_label' => ['nullable', 'string', 'max:80'],
             'card_style' => ['nullable', 'array'],
             'card_style.background_color' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
@@ -82,6 +85,29 @@ class UpdateBotDesignRequest extends FormRequest
 
             $bot = $this->route('bot');
             $datasetId = $this->datasetId();
+
+            if ($this->productSource() === 'live' || $this->liveOperationId() !== null) {
+                $operation = $bot->botApiOperations()
+                    ->where('is_enabled', true)
+                    ->where('tool_name', 'search_catalog')
+                    ->whereHas('apiOperation', function ($query) use ($bot): void {
+                        $query->whereKey($this->liveOperationId())
+                            ->where('is_enabled', true)
+                            ->where('execution_mode', ApiOperationMode::Read->value)
+                            ->whereNotNull('response_mapping')
+                            ->whereHas('dataSource', fn ($source) => $source
+                                ->where('team_id', $bot->team_id)
+                                ->whereIn('type', ['rest_api', 'graphql_api'])
+                                ->liveUsable());
+                    })
+                    ->exists();
+
+                if (! $operation) {
+                    $validator->errors()->add('live_operation_id', 'Choose a valid enabled live catalog operation.');
+                }
+
+                return;
+            }
 
             if (! $bot instanceof Bot || $datasetId === null) {
                 return;
@@ -147,19 +173,35 @@ class UpdateBotDesignRequest extends FormRequest
     }
 
     /**
-     * @return array<string, int>
+     * @return array<string, int|string>
      */
     public function mappingData(): array
     {
         $mapping = [];
 
         foreach ((array) $this->validated('mapping', []) as $slot => $value) {
-            if (is_int($value) || (is_string($value) && ctype_digit($value))) {
-                $mapping[(string) $slot] = (int) $value;
+            if (is_int($value) || is_string($value)) {
+                $mapping[(string) $slot] = ctype_digit((string) $value)
+                    ? (int) $value
+                    : trim($value);
             }
         }
 
         return $mapping;
+    }
+
+    public function productSource(): string
+    {
+        return $this->validated('product_source') === 'live' ? 'live' : 'dataset';
+    }
+
+    public function liveOperationId(): ?int
+    {
+        $operationId = $this->validated('live_operation_id');
+
+        return is_int($operationId) || (is_string($operationId) && ctype_digit($operationId))
+            ? (int) $operationId
+            : null;
     }
 
     public function datasetId(): ?int

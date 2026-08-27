@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ApiOperationMode;
 use App\Http\Requests\UpdateBotDesignRequest;
 use App\Models\Bot;
 use App\Models\Dataset;
@@ -57,6 +58,46 @@ class BotDesignController extends Controller
             ];
         }
 
+        $liveOperations = $bot->botApiOperations()
+            ->where('is_enabled', true)
+            ->where('tool_name', 'search_catalog')
+            ->whereHas('bot', fn ($query) => $query->where('team_id', $bot->team_id))
+            ->whereHas('apiOperation', function ($query) use ($bot): void {
+                $query->where('is_enabled', true)
+                    ->where('execution_mode', ApiOperationMode::Read->value)
+                    ->whereNotNull('response_mapping')
+                    ->whereHas('dataSource', fn ($source) => $source
+                        ->where('team_id', $bot->team_id)
+                        ->whereIn('type', ['rest_api', 'graphql_api'])
+                        ->liveUsable());
+            })
+            ->with('apiOperation.dataSource')
+            ->get()
+            ->map(function ($attachment): array {
+                $operation = $attachment->apiOperation;
+                $mapping = (array) $operation->response_mapping;
+                $fields = (array) data_get(
+                    $mapping,
+                    'collection.fields',
+                    data_get($mapping, 'output', data_get($mapping, 'fields', [])),
+                );
+                $fieldNames = $fields !== [] && array_keys($fields) === range(0, count($fields) - 1)
+                    ? $fields
+                    : array_keys($fields);
+
+                return [
+                    'id' => $operation->id,
+                    'name' => $operation->name,
+                    'key' => $operation->key,
+                    'capability' => $attachment->tool_name,
+                    'sourceName' => $operation->dataSource?->name,
+                    'fields' => array_values(array_filter($fieldNames, 'is_string')),
+                    'template' => $this->liveTemplate($bot, (int) $operation->id),
+                ];
+            })
+            ->values()
+            ->all();
+
         return Inertia::render('bots/design', [
             'bot' => [
                 'id' => $bot->id,
@@ -65,6 +106,7 @@ class BotDesignController extends Controller
                 'appearance' => (array) $bot->appearance,
             ],
             'datasets' => $datasets,
+            'liveOperations' => $liveOperations,
             'platform' => [
                 'name' => (string) config('platform.marketing_name'),
                 'url' => (string) config('platform.marketing_url'),
@@ -129,6 +171,27 @@ class BotDesignController extends Controller
             $template->save();
         }
 
+        if ($request->productSource() === 'live' && $request->liveOperationId() !== null) {
+            $template = $bot->cardTemplates()->firstOrNew([
+                'dataset_id' => null,
+                'api_operation_id' => $request->liveOperationId(),
+            ]);
+            $layout = (array) $template->layout;
+            $cardStyles = $request->cardStyleData();
+
+            if ($cardStyles !== []) {
+                $layout['card_style'] = array_replace((array) data_get($layout, 'card_style'), $cardStyles);
+            }
+
+            $template->fill([
+                'name' => 'Live catalog default',
+                'is_default' => true,
+                'api_operation_id' => $request->liveOperationId(),
+                'mapping' => $request->mappingData(),
+                'layout' => array_replace($layout, ['button_label' => $request->buttonLabel()]),
+            ])->save();
+        }
+
         return to_route('bots.design.edit', [
             'current_team' => $currentTeam->slug,
             'bot' => $bot,
@@ -149,6 +212,22 @@ class BotDesignController extends Controller
             'mapping' => (array) $template->getAttribute('mapping'),
             'buttonLabel' => data_get($template->getAttribute('layout'), 'button_label', 'View product'),
             'cardStyle' => (array) data_get($template->getAttribute('layout'), 'card_style', []),
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function liveTemplate(Bot $bot, ?int $operationId = null): ?array
+    {
+        $template = $bot->cardTemplates()
+            ->whereNull('dataset_id')
+            ->when($operationId !== null, fn ($query) => $query->where('api_operation_id', $operationId))
+            ->first();
+
+        return $template === null ? null : [
+            'mapping' => (array) $template->mapping,
+            'apiOperationId' => $template->api_operation_id,
+            'buttonLabel' => data_get($template->layout, 'button_label', 'View product'),
+            'cardStyle' => (array) data_get($template->layout, 'card_style', []),
         ];
     }
 

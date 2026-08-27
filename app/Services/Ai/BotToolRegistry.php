@@ -19,6 +19,7 @@ use App\Services\Ai\Tools\RecommendProductsTool;
 use App\Services\Ai\Tools\RequestHumanHandoffTool;
 use App\Services\Ai\Tools\SearchCatalogTool;
 use App\Services\Ai\Tools\TrackOrderTool;
+use App\Services\Api\LiveOperationCapabilityService;
 
 class BotToolRegistry
 {
@@ -39,6 +40,7 @@ class BotToolRegistry
         private readonly TrackOrderTool $trackOrderTool,
         private readonly GetStoreLocationsTool $getStoreLocationsTool,
         private readonly RequestHumanHandoffTool $requestHumanHandoffTool,
+        private readonly LiveOperationCapabilityService $liveOperations,
     ) {}
 
     /**
@@ -59,7 +61,7 @@ class BotToolRegistry
             ->where('datasets.team_id', $bot->team_id)
             ->catalog()
             ->ready()
-            ->exists()) {
+            ->exists() || $this->liveOperations->has($bot, 'search_catalog')) {
             $tools[] = $this->searchCatalogTool;
         }
 

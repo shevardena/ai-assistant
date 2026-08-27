@@ -20,6 +20,7 @@ import { show as showDataSource } from '@/routes/data-sources';
 
 type Props = {
     dataSource: { id: number; name: string; config: Record<string, unknown> };
+    bots: { id: number; name: string }[];
     templateContext?: {
         requirementKey: string;
         capability?: string;
@@ -39,6 +40,8 @@ type Props = {
         query_parameters: ParameterRow[];
         body_parameters: ParameterRow[];
         response_fields: ResponseField[];
+        response_mapping?: Record<string, unknown>;
+        live_query?: LiveQueryMapping;
         pagination: Record<string, unknown>;
         timeout_ms: number;
         is_enabled: boolean;
@@ -59,7 +62,17 @@ type ResponseField = {
     name: string;
     path: string;
     required: boolean;
+    type: FieldType;
+    searchable: boolean;
+    filterable: boolean;
+    sortable: boolean;
+    displayable: boolean;
 };
+
+type FieldType = 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime';
+
+type LiveFilterMapping = { field: string; operator: string; remote: string };
+type LiveQueryMapping = { search_text: string; filters: LiveFilterMapping[] };
 
 type InputMappingRow = {
     model_input: string;
@@ -84,6 +97,11 @@ const emptyResponseField = (): ResponseField => ({
     name: '',
     path: '',
     required: false,
+    type: 'string',
+    searchable: true,
+    filterable: true,
+    sortable: true,
+    displayable: true,
 });
 
 const emptyInputMapping = (): InputMappingRow => ({
@@ -98,6 +116,7 @@ const emptyKeyValue = (): KeyValueRow => ({ name: '', value: '' });
 
 export default function ApiOperationCreate({
     dataSource,
+    bots,
     templateContext,
     operation,
 }: Props) {
@@ -115,9 +134,10 @@ export default function ApiOperationCreate({
         query_parameters: operation?.query_parameters ?? ([] as ParameterRow[]),
         body_parameters: operation?.body_parameters ?? ([] as ParameterRow[]),
         response_fields: operation?.response_fields ?? [
-            { name: 'status', path: 'status', required: true },
+            { ...emptyResponseField(), name: 'status', path: 'status', required: true },
         ] as ResponseField[],
         response_mapping: {},
+        live_query: operation?.live_query ?? { search_text: '', filters: [] },
         pagination: operation?.pagination ?? { type: 'none' },
         timeout_ms: operation?.timeout_ms ?? 10000,
         is_enabled: operation?.is_enabled ?? true,
@@ -125,6 +145,51 @@ export default function ApiOperationCreate({
         bot: operation?.bot_id ?? templateContext?.botId ?? '',
         input_mapping: operation?.input_mapping ?? ([] as InputMappingRow[]),
     });
+    const existingCollection = operation?.response_mapping?.collection;
+    const [responseMode, setResponseMode] = useState<'object' | 'collection'>(
+        existingCollection && typeof existingCollection === 'object'
+            ? 'collection'
+            : 'object',
+    );
+    const [collectionPath, setCollectionPath] = useState(
+        existingCollection &&
+            typeof existingCollection === 'object' &&
+            'path' in existingCollection &&
+            typeof existingCollection.path === 'string'
+            ? existingCollection.path
+            : '',
+    );
+    const [collectionFields, setCollectionFields] = useState<ResponseField[]>(
+        existingCollection &&
+            typeof existingCollection === 'object' &&
+            'fields' in existingCollection &&
+            existingCollection.fields &&
+            typeof existingCollection.fields === 'object'
+            ? Object.entries(existingCollection.fields).map(([name, definition]) => ({
+                  name,
+                  path:
+                      typeof definition === 'string'
+                          ? definition
+                          : definition &&
+                              typeof definition === 'object' &&
+                              'path' in definition &&
+                              typeof definition.path === 'string'
+                            ? definition.path
+                            : '',
+                  required:
+                      definition &&
+                      typeof definition === 'object' &&
+                      'required' in definition
+                        ? Boolean(definition.required)
+                        : true,
+                  type: (definition && typeof definition === 'object' && ['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'].includes(String(definition.type)) ? definition.type : 'string') as FieldType,
+                  searchable: definition && typeof definition === 'object' && 'searchable' in definition ? Boolean(definition.searchable) : true,
+                  filterable: definition && typeof definition === 'object' && 'filterable' in definition ? Boolean(definition.filterable) : true,
+                  sortable: definition && typeof definition === 'object' && 'sortable' in definition ? Boolean(definition.sortable) : true,
+                  displayable: definition && typeof definition === 'object' && 'displayable' in definition ? Boolean(definition.displayable) : true,
+              }))
+            : [emptyResponseField()],
+    );
     const [preview, setPreview] = useState<Record<string, unknown> | null>(
         null,
     );
@@ -258,6 +323,38 @@ export default function ApiOperationCreate({
                 <form
                     onSubmit={(event) => {
                         event.preventDefault();
+                                form.transform((data) => ({
+                            ...data,
+                            response_mapping:
+                                responseMode === 'collection'
+                                    ? {
+                                          pagination: data.pagination,
+                                          collection: {
+                                              path: collectionPath,
+                                              fields: Object.fromEntries(
+                                                  collectionFields
+                                                      .filter(
+                                                          (field) =>
+                                                              field.name &&
+                                                              field.path,
+                                                      )
+                                                      .map((field) => [
+                                                          field.name,
+                                                          {
+                                                              path: field.path,
+                                                              required: field.required,
+                                                              type: field.type,
+                                                              searchable: field.searchable,
+                                                              filterable: field.filterable,
+                                                              sortable: field.sortable,
+                                                              displayable: field.displayable,
+                                                          },
+                                                      ]),
+                                              ),
+                                          },
+                                      }
+                                : { pagination: data.pagination },
+                        }));
                         operation
                             ? form.put(update.url([
                                   currentTeamSlug,
@@ -413,6 +510,28 @@ export default function ApiOperationCreate({
                                 <p className="text-sm text-muted-foreground">
                                     {t('api_builder.capability_help')}
                                 </p>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="operation-bot">Attach to bot</Label>
+                                <select
+                                    id="operation-bot"
+                                    className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                                    value={String(form.data.bot ?? '')}
+                                    onChange={(event) =>
+                                        form.setData('bot', event.target.value)
+                                    }
+                                >
+                                    <option value="">Do not attach to a bot</option>
+                                    {bots.map((bot) => (
+                                        <option key={bot.id} value={bot.id}>
+                                            {bot.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-sm text-muted-foreground">
+                                    Select the bot that should use this operation.
+                                </p>
+                                <InputError message={form.errors.bot} />
                             </div>
                         </CardContent>
                     </Card>
@@ -628,6 +747,22 @@ export default function ApiOperationCreate({
                             </Button>
                         </CardContent>
                     </Card>
+                    {form.data.usage === 'live_read' ? (
+                        <Card>
+                            <CardHeader><CardTitle>Live search mappings</CardTitle></CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="grid gap-2 md:max-w-xl">
+                                    <Label>Remote search text parameter</Label>
+                                    <Input value={form.data.live_query.search_text} placeholder="q, query, keyword..." onChange={(event) => form.setData('live_query', { ...form.data.live_query, search_text: event.target.value })} />
+                                    <p className="text-sm text-muted-foreground">Choose the remote parameter that receives a customer’s text search. Leave blank to search mapped fields locally.</p>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between"><div><p className="font-medium">Remote filter mappings</p><p className="text-sm text-muted-foreground">Map a safe field and operator to the API’s parameter.</p></div><Button type="button" variant="outline" size="sm" onClick={() => form.setData('live_query', { ...form.data.live_query, filters: [...form.data.live_query.filters, { field: '', operator: 'eq', remote: '' }] })}><Plus /> Add mapping</Button></div>
+                                    {form.data.live_query.filters.map((filter, index) => <div key={`live-filter-${index}`} className="grid gap-3 rounded-lg border p-3 md:grid-cols-4"><Input value={filter.field} placeholder="Safe field key" onChange={(event) => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item) })} /><Select value={filter.operator} onValueChange={(value) => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.map((item, itemIndex) => itemIndex === index ? { ...item, operator: value } : item) })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['eq', 'neq', 'contains', 'gt', 'gte', 'lt', 'lte', 'between', 'in'].map((operator) => <SelectItem key={operator} value={operator}>{operator}</SelectItem>)}</SelectContent></Select><Input value={filter.remote} placeholder="Remote parameter" onChange={(event) => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.map((item, itemIndex) => itemIndex === index ? { ...item, remote: event.target.value } : item) })} /><Button type="button" variant="ghost" size="icon" onClick={() => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 /></Button></div>)}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ) : null}
                     <Card>
                         <CardHeader>
                             <CardTitle>
@@ -862,6 +997,130 @@ export default function ApiOperationCreate({
                                 </div>
                             ) : (
                                 <div className="space-y-3">
+                                    <div className="grid gap-2 md:max-w-sm">
+                                        <Label>Response shape</Label>
+                                        <Select
+                                            value={responseMode}
+                                            onValueChange={(value: 'object' | 'collection') =>
+                                                setResponseMode(value)
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="object">Single object</SelectItem>
+                                                <SelectItem value="collection">Product list</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    {responseMode === 'collection' ? (
+                                        <div className="space-y-3 rounded-lg border p-3">
+                                            <div className="grid gap-2">
+                                                <Label>Collection response path</Label>
+                                                <Input
+                                                    value={collectionPath}
+                                                    placeholder="data"
+                                                    onChange={(event) =>
+                                                        setCollectionPath(event.target.value)
+                                                    }
+                                                />
+                                                <p className="text-sm text-muted-foreground">
+                                                    Path to the array containing the products.
+                                                </p>
+                                            </div>
+                                            {collectionFields.map((field, index) => (
+                                                <div
+                                                    key={"collection-" + index}
+                                                    className="grid gap-3 rounded-lg border p-3 md:grid-cols-6"
+                                                >
+                                                    <Input
+                                                        value={field.name}
+                                                        placeholder="Output name (title, price...)"
+                                                        onChange={(event) =>
+                                                            setCollectionFields((current) =>
+                                                                current.map((item, itemIndex) =>
+                                                                    itemIndex === index
+                                                                        ? { ...item, name: event.target.value }
+                                                                        : item,
+                                                                ),
+                                                            )
+                                                        }
+                                                    />
+                                                    <Select value={field.type} onValueChange={(value: FieldType) => setCollectionFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, type: value } : item))}>
+                                                        <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
+                                                        <SelectContent>{(['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'] as FieldType[]).map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
+                                                    </Select>
+                                                    <div className="flex flex-wrap items-center gap-3 text-xs md:col-span-4">
+                                                        {(['searchable', 'filterable', 'sortable', 'displayable'] as const).map((key) => <label key={key} className="flex items-center gap-1"><input type="checkbox" checked={field[key]} onChange={(event) => setCollectionFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.checked } : item))} />{key}</label>)}
+                                                    </div>
+                                                    <Input
+                                                        className="md:col-span-2"
+                                                        value={field.path}
+                                                        placeholder="Item response path (name, price...)"
+                                                        onChange={(event) =>
+                                                            setCollectionFields((current) =>
+                                                                current.map((item, itemIndex) =>
+                                                                    itemIndex === index
+                                                                        ? { ...item, path: event.target.value }
+                                                                        : item,
+                                                                ),
+                                                            )
+                                                        }
+                                                    />
+                                                    <label className="flex items-center gap-2 text-sm">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={field.required}
+                                                            onChange={(event) =>
+                                                                setCollectionFields((current) =>
+                                                                    current.map((item, itemIndex) =>
+                                                                        itemIndex === index
+                                                                            ? {
+                                                                                  ...item,
+                                                                                  required:
+                                                                                      event.target.checked,
+                                                                              }
+                                                                            : item,
+                                                                    ),
+                                                                )
+                                                            }
+                                                        />
+                                                        {t('common.required')}
+                                                    </label>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() =>
+                                                            setCollectionFields((current) =>
+                                                                current.filter(
+                                                                    (_, itemIndex) =>
+                                                                        itemIndex !== index,
+                                                                ),
+                                                            )
+                                                        }
+                                                    >
+                                                        <Trash2 />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                onClick={() =>
+                                                    setCollectionFields((current) => [
+                                                        ...current,
+                                                        emptyResponseField(),
+                                                    ])
+                                                }
+                                            >
+                                                <Plus /> Add product field
+                                            </Button>
+                                        </div>
+                                    ) : null}
+                                    {responseMode === 'object' ? (
+                                    <>
                                     <div className="flex items-center justify-between gap-3">
                                         <div>
                                             <p className="font-medium">
@@ -894,9 +1153,9 @@ export default function ApiOperationCreate({
                                     </div>
                                     {form.data.response_fields.map(
                                         (field, index) => (
-                                            <div
+                                                <div
                                                 key={`response-${index}`}
-                                                className="grid gap-3 rounded-lg border p-3 md:grid-cols-5"
+                                                className="grid gap-3 rounded-lg border p-3 md:grid-cols-6"
                                             >
                                                 <Input
                                                     value={field.name}
@@ -911,6 +1170,13 @@ export default function ApiOperationCreate({
                                                         )
                                                     }
                                                 />
+                                                <Select value={field.type} onValueChange={(value: FieldType) => updateResponseField(index, 'type', value)}>
+                                                    <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
+                                                    <SelectContent>{(['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'] as FieldType[]).map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
+                                                </Select>
+                                                <div className="flex flex-wrap items-center gap-3 text-xs md:col-span-4">
+                                                    {(['searchable', 'filterable', 'sortable', 'displayable'] as const).map((key) => <label key={key} className="flex items-center gap-1"><input type="checkbox" checked={field[key]} onChange={(event) => updateResponseField(index, key, event.target.checked)} />{key}</label>)}
+                                                </div>
                                                 <Input
                                                     className="md:col-span-2"
                                                     value={field.path}
@@ -962,6 +1228,8 @@ export default function ApiOperationCreate({
                                             </div>
                                         ),
                                     )}
+                                    </>
+                                    ) : null}
                                 </div>
                             )}
                             {pathArguments.length > 0 ? (
