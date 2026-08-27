@@ -73,7 +73,7 @@ class BotDesignController extends Controller
             })
             ->with('apiOperation.dataSource')
             ->get()
-            ->map(function ($attachment): array {
+            ->map(function ($attachment) use ($bot): array {
                 $operation = $attachment->apiOperation;
                 $mapping = (array) $operation->response_mapping;
                 $fields = (array) data_get(

@@ -1,12 +1,16 @@
 <?php
 
+use App\Enums\ApiOperationMode;
 use App\Enums\TeamRole;
+use App\Models\ApiOperation;
 use App\Models\Bot;
+use App\Models\BotApiOperation;
 use App\Models\BotCardTemplate;
 use App\Models\BotDataset;
 use App\Models\Dataset;
 use App\Models\DatasetField;
 use App\Models\DatasetRecord;
+use App\Models\DataSource;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -98,6 +102,32 @@ test('bot design exposes only attached dataset displayable fields and saves a te
             ],
         ])
         ->and($bot->fresh()->appearance)->toMatchArray(['launcher_position' => 'bottom-left']);
+});
+
+test('bot design exposes attached live operations', function () {
+    [$user, $team, $bot] = botCardTemplateContext();
+    $dataSource = DataSource::factory()->ready()->create([
+        'team_id' => $team->id,
+        'type' => 'rest_api',
+    ]);
+    $operation = ApiOperation::factory()->create([
+        'data_source_id' => $dataSource->id,
+        'execution_mode' => ApiOperationMode::Read->value,
+        'response_mapping' => ['output' => ['name' => ['path' => 'name']]],
+    ]);
+    BotApiOperation::factory()->create([
+        'bot_id' => $bot->id,
+        'api_operation_id' => $operation->id,
+        'tool_name' => 'search_catalog',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('bots.design.edit', ['current_team' => $team->slug, 'bot' => $bot]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('bots/design')
+            ->where('liveOperations.0.id', $operation->id)
+            ->where('liveOperations.0.name', $operation->name));
 });
 
 test('bot design rejects a cross-dataset field mapping', function () {
