@@ -38,7 +38,7 @@ class SearchCatalogTool implements BotTool
 
     public function description(): string
     {
-        return 'Search one dataset attached to this bot using business search criteria.';
+        return 'Search one catalog using concise, canonical product terms and supported business search criteria.';
     }
 
     /**
@@ -61,7 +61,7 @@ class SearchCatalogTool implements BotTool
                 ],
                 'text' => [
                     'type' => ['string', 'null'],
-                    'description' => 'Use null for a broad product listing with no search phrase.',
+                    'description' => 'Use concise catalog-friendly terms, canonical names, or exact identifiers; do not copy the customer\'s full request. Use null for a broad product listing with no search phrase.',
                 ],
                 'filters' => [
                     'type' => 'array',
@@ -136,7 +136,6 @@ class SearchCatalogTool implements BotTool
                 return $this->executeLive($bot, $arguments);
             }
 
-            $arguments = $this->preserveNativeSearchText($arguments, $context);
             ['dataset' => $dataset, 'query' => $query] = $this->queryFactory->make($bot, $arguments);
             $startedAt = hrtime(true);
             $result = $this->searchService->search($context->team, $query);
@@ -254,12 +253,21 @@ class SearchCatalogTool implements BotTool
         );
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
     private function liveArguments(ApiOperation $operation, array $arguments): array
     {
-        $schema = (array) $operation->request_schema;
-        $properties = (array) ($schema['properties'] ?? []);
-        $mapped = [...(array) data_get($operation->request_mapping, 'query', []), ...(array) data_get($operation->request_mapping, 'body', [])];
+        $schemaValue = $operation->getAttribute('request_schema');
+        $schema = is_array($schemaValue) ? $schemaValue : [];
+        $propertiesValue = $schema['properties'] ?? [];
+        $properties = is_array($propertiesValue) ? $propertiesValue : [];
+        $mappingValue = $operation->getAttribute('request_mapping');
+        $mapping = is_array($mappingValue) ? $mappingValue : [];
+        $queryMapping = is_array($mapping['query'] ?? null) ? $mapping['query'] : [];
+        $bodyMapping = is_array($mapping['body'] ?? null) ? $mapping['body'] : [];
+        $mapped = [...$queryMapping, ...$bodyMapping];
         $result = [];
 
         foreach ($mapped as $argument => $_destination) {
@@ -307,10 +315,29 @@ class SearchCatalogTool implements BotTool
         return null;
     }
 
-    /** @param array<int|string, mixed> $data @return list<array<string, mixed>> */
+    /**
+     * @param  array<int|string, mixed>  $data
+     * @return list<array<string, mixed>>
+     */
     private function normalizeLiveItems(array $data): array
     {
-        $items = array_is_list($data) ? $data : collect(['items', 'products', 'results', 'data'])->first(fn (string $key): bool => is_array($data[$key] ?? null) && array_is_list($data[$key])) ?? [$data];
+        $items = array_is_list($data) ? $data : [];
+
+        if ($items === []) {
+            foreach (['items', 'products', 'results', 'data'] as $key) {
+                $candidate = $data[$key] ?? null;
+
+                if (is_array($candidate) && array_is_list($candidate)) {
+                    $items = $candidate;
+
+                    break;
+                }
+            }
+        }
+
+        if ($items === [] && ! array_is_list($data)) {
+            $items = [$data];
+        }
 
         return array_values(array_filter(array_map(function (mixed $item): ?array {
             if (! is_array($item)) {
@@ -331,66 +358,5 @@ class SearchCatalogTool implements BotTool
                 'badge' => $item['badge'] ?? null,
             ];
         }, $items), static fn (?array $item): bool => is_array($item) && is_scalar($item['title'] ?? null)));
-    }
-
-    /**
-     * Preserve product terms written in a non-Latin script by the customer.
-     * The model may translate those terms while selecting tool arguments, but
-     * the indexed catalog contains the original product text.
-     *
-     * @param  array<string, mixed>  $arguments
-     * @return array<string, mixed>
-     */
-    private function preserveNativeSearchText(array $arguments, ToolExecutionContext $context): array
-    {
-        $message = $context->userMessage?->content;
-
-        if (! is_string($message) || trim($message) === '') {
-            return $arguments;
-        }
-
-        preg_match_all(
-            '/(?:[\p{Arabic}][\p{Arabic}\d\s\-]*|[\p{Armenian}][\p{Armenian}\d\s\-]*|[\p{Cyrillic}][\p{Cyrillic}\d\s\-]*|[\p{Georgian}][\p{Georgian}\d\s\-]*|[\p{Greek}][\p{Greek}\d\s\-]*|[\p{Hebrew}][\p{Hebrew}\d\s\-]*|[\p{Han}\p{Hiragana}\p{Katakana}][\p{Han}\p{Hiragana}\p{Katakana}\d\s\-]*)/u',
-            $message,
-            $matches,
-        );
-
-        $stopWords = [
-            'გთხოვ',
-            'მაჩვენე',
-            'მიპოვე',
-            'მომიძებნე',
-            'მომეცი',
-            'მინდა',
-            'პროდუქტი',
-            'პროდუქტები',
-            'მაჩვენეთ',
-        ];
-        $nativeTerms = [];
-
-        foreach ($matches[0] ?? [] as $term) {
-            $words = preg_split('/\s+/u', trim($term), -1, PREG_SPLIT_NO_EMPTY);
-            $words = array_values(array_filter(
-                $words ?: [],
-                static fn (string $word): bool => ! in_array(mb_strtolower($word), $stopWords, true)
-                    && preg_match('/\p{L}/u', $word) === 1,
-            ));
-
-            if ($words !== []) {
-                $nativeTerms[] = implode(' ', $words);
-            }
-        }
-
-        if ($nativeTerms === []) {
-            return $arguments;
-        }
-
-        usort(
-            $nativeTerms,
-            static fn (string $left, string $right): int => count(preg_split('/\s+/u', $right, -1, PREG_SPLIT_NO_EMPTY) ?: []) <=> count(preg_split('/\s+/u', $left, -1, PREG_SPLIT_NO_EMPTY) ?: []),
-        );
-        $arguments['text'] = $nativeTerms[0];
-
-        return $arguments;
     }
 }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ApiOperationMode;
+use App\Enums\RuntimeMode;
 use App\Enums\TeamRole;
 use App\Models\ApiOperation;
 use App\Models\Bot;
@@ -8,6 +9,7 @@ use App\Models\BotApiOperation;
 use App\Models\BotDataset;
 use App\Models\Dataset;
 use App\Models\DataSource;
+use App\Models\Message;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Ai\AiSearchOrchestrator;
@@ -15,7 +17,9 @@ use App\Services\Ai\AiToolSchemaBuilder;
 use App\Services\Ai\BotToolRegistry;
 use App\Services\Ai\Contracts\AiClient;
 use App\Services\Ai\Tools\SearchCatalogTool;
+use App\Services\Ai\Tools\ToolExecutionContext;
 use App\Services\Ai\Tools\ToolResult;
+use Illuminate\Support\Facades\Http;
 
 function botToolRegistryContext(bool $attachDataset = true): array
 {
@@ -110,6 +114,81 @@ test('live catalog mappings translate canonical search arguments to common API p
         'category_name' => 'Toyota',
         'per_page' => 10,
     ]);
+});
+
+test('live catalog search sends the AI-selected canonical term through the remote mapping', function () {
+    [, $team, $bot] = botToolRegistryContext(false);
+    $source = DataSource::factory()->ready()->create([
+        'team_id' => $team->id,
+        'type' => 'rest_api',
+        'config' => ['base_url' => 'https://api.example.test'],
+    ]);
+    $operation = ApiOperation::factory()->create([
+        'data_source_id' => $source->id,
+        'execution_mode' => ApiOperationMode::Read->value,
+        'method' => 'GET',
+        'path' => '/products',
+        'request_schema' => [
+            'type' => 'object',
+            'properties' => ['q' => ['type' => 'string']],
+            'required' => [],
+        ],
+        'request_mapping' => [
+            'query' => ['q' => 'q'],
+            'live_query' => ['search_text' => 'q'],
+        ],
+        'response_mapping' => [
+            'collection' => [
+                'path' => 'data',
+                'fields' => [
+                    'id' => ['path' => 'id', 'type' => 'integer', 'required' => true],
+                    'title' => ['path' => 'name', 'type' => 'string', 'required' => true, 'searchable' => true],
+                    'price' => ['path' => 'price', 'type' => 'decimal', 'required' => false],
+                ],
+            ],
+            'pagination' => ['type' => 'none'],
+        ],
+    ]);
+    BotApiOperation::factory()->create([
+        'bot_id' => $bot->id,
+        'api_operation_id' => $operation->id,
+        'tool_name' => 'search_catalog',
+        'is_enabled' => true,
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.example.test/*' => Http::response([
+            'data' => [[
+                'id' => 35,
+                'name' => '07-09 CAMRY - ბამპერი (წინა)',
+                'price' => '160.00',
+            ]],
+        ]),
+    ]);
+
+    $tool = app(BotToolRegistry::class)->find($bot, 'search_catalog');
+    $result = $tool->execute(
+        $bot,
+        [
+            'dataset' => null,
+            'text' => 'camry',
+            'filters' => [],
+            'sorts' => [],
+            'limit' => 10,
+            'result_count' => null,
+        ],
+        ToolExecutionContext::forBot(
+            $bot,
+            userMessage: new Message(['content' => 'მაჩვენე ქემრის ნაწილები']),
+            mode: RuntimeMode::Test,
+        ),
+    );
+
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'q=camry'));
+
+    expect($result->data['search']['count'])->toBe(1)
+        ->and($result->data['search']['items'][0]['title'])->toBe('07-09 CAMRY - ბამპერი (წინა)');
 });
 
 test('the registered tool produces a strict schema without internal implementation details', function () {

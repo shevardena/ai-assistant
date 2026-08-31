@@ -6,6 +6,7 @@ use App\Models\BotDataset;
 use App\Models\Dataset;
 use App\Models\DatasetField;
 use App\Models\DatasetRecord;
+use App\Models\Message;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Ai\AiSearchOrchestrator;
@@ -206,6 +207,70 @@ test('orchestrator executes a real search and returns compact grounded results',
         ->and(collect($fake->payloads[1]['input'])->contains(
             fn (array $item): bool => ($item['type'] ?? null) === 'function_call_output',
         ))->toBeTrue();
+});
+
+test('orchestrator provides centralized multilingual catalog normalization rules', function () {
+    [, , $bot] = aiRuntimeFixture();
+    $fake = fakeAiClient([
+        [
+            'output' => [],
+            'output_text' => 'No search needed.',
+            'usage' => null,
+        ],
+    ]);
+    app()->instance(AiClient::class, $fake);
+
+    app(AiSearchOrchestrator::class)->run($bot, 'მაჩვენე ქემრის ნაწილები');
+
+    expect($fake->payloads[0]['instructions'])
+        ->toContain('Convert the customer\'s request into concise search terms most likely to exist in the connected catalog.')
+        ->toContain('Translation, transliteration, canonicalization, and normalization are allowed')
+        ->toContain('Reply to the customer in the language used by the customer')
+        ->not->toContain('copy that term exactly into the catalog tool text argument');
+});
+
+test('catalog search honors the AI-selected canonical term for a non-Latin customer request', function () {
+    [, , $bot, $dataset] = aiRuntimeFixture();
+    DatasetRecord::factory()->create([
+        'dataset_id' => $dataset->id,
+        'external_id' => 'camry-bumper',
+        'payload' => [
+            'name' => '07-09 CAMRY - ბამპერი (წინა)',
+            'price' => '160.00',
+        ],
+        'searchable_text' => '07-09 CAMRY - ბამპერი (წინა)',
+        'is_active' => true,
+    ]);
+
+    $searchCall = searchCatalogCall(text: 'camry');
+    $arguments = json_decode($searchCall['arguments'], true, 512, JSON_THROW_ON_ERROR);
+    $arguments['filters'] = [];
+    $arguments['sorts'] = [];
+    $searchCall['arguments'] = json_encode($arguments, JSON_THROW_ON_ERROR);
+
+    $fake = fakeAiClient([
+        [
+            'output' => [$searchCall],
+            'output_text' => null,
+            'usage' => null,
+        ],
+        [
+            'output' => [],
+            'output_text' => 'ვიპოვე შესაბამისი პროდუქტი.',
+            'usage' => null,
+        ],
+    ]);
+    app()->instance(AiClient::class, $fake);
+
+    $response = app(AiSearchOrchestrator::class)->run(
+        $bot,
+        'მაჩვენე ქემრის ნაწილები',
+        userMessage: new Message(['content' => 'მაჩვენე ქემრის ნაწილები']),
+    );
+
+    expect($response->searches)->toHaveCount(1)
+        ->and($response->searches[0]['count'])->toBe(1)
+        ->and($response->searches[0]['items'][0]['name'])->toBe('07-09 CAMRY - ბამპერი (წინა)');
 });
 
 test('unauthorized bot dataset calls are rejected without searching another dataset', function () {
