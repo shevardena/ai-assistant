@@ -63,7 +63,8 @@ class RuntimeApiOperationExecutor
         try {
             $this->assertUsable($runtimeOperation, ApiOperationMode::Read);
             $this->validateArguments($runtimeOperation, $plan->remoteArguments);
-            $mapping = (array) $runtimeOperation->operation->response_mapping;
+            $mappingValue = $runtimeOperation->operation->getAttribute('response_mapping');
+            $mapping = is_array($mappingValue) ? $mappingValue : [];
             $fields = $this->mappedFieldNames($runtimeOperation);
             $records = [];
             $seen = [];
@@ -73,6 +74,13 @@ class RuntimeApiOperationExecutor
             $moreAvailable = false;
             $truncated = false;
             $lastStatus = 200;
+            $rawResponseItemCount = 0;
+            $collectionExtractedItemCount = 0;
+            $mappedItemCount = 0;
+            $deduplicatedCandidateCount = 0;
+            $matcherInputCount = 0;
+            $matcherOutputCount = 0;
+            $candidateBudgetClippedCount = 0;
             $nextUrl = null;
             $page = $this->paginationStart($mapping);
             $cursor = null;
@@ -92,12 +100,18 @@ class RuntimeApiOperationExecutor
                 }
                 $lastStatus = $response['status'];
                 $pages++;
+                $rawResponseItemCount += $this->rawResponseItemCount($response['data']);
                 $collection = $this->responseCollection($mapping, $response['data']);
+                $collectionExtractedItemCount += count($collection);
                 $remainingBudget = max(0, $plan->candidateBudget - $candidates);
                 $collectionWasClipped = count($collection) > $remainingBudget;
+                $candidateBudgetClippedCount += max(0, count($collection) - $remainingBudget);
                 $candidates += min(count($collection), $remainingBudget);
                 $mapped = $this->mapResponse($runtimeOperation, $response['data'], min(count($collection), $remainingBudget));
                 $mapped = array_is_list($mapped) ? $mapped : [];
+                $mappedItemCount += count($mapped);
+                $pageMatcherInputCount = 0;
+                $pageMatcherOutputCount = 0;
 
                 if ($collectionWasClipped) {
                     $truncated = true;
@@ -113,11 +127,34 @@ class RuntimeApiOperationExecutor
                         continue;
                     }
                     $seen[$key] = true;
-                    if ($this->matchesMappedRecord($record, $plan->localFilters, $fields)
+                    $deduplicatedCandidateCount++;
+                    $matcherInputCount++;
+                    $pageMatcherInputCount++;
+                    if ($this->matchesMappedRecord($record, array_values($plan->localFilters), $fields)
                         && app(LiveReadRecordMatcher::class)->matchesSearchText($record, $plan->localSearchText, $fields)) {
                         $records[] = $record;
+                        $matcherOutputCount++;
+                        $pageMatcherOutputCount++;
                     }
                 }
+
+                logger()->info('Live catalog response stages processed.', [
+                    'bot_id' => $runtimeOperation->bot->id,
+                    'team_id' => $runtimeOperation->bot->team_id,
+                    'operation_id' => $runtimeOperation->operation->id,
+                    'operation' => $runtimeOperation->operation->key,
+                    'page' => $pages,
+                    'raw_http_status' => $response['status'],
+                    'raw_response_item_count' => $this->rawResponseItemCount($response['data']),
+                    'response_mapping_type' => array_key_exists('collection', $mapping) ? 'collection' : 'scalar',
+                    'collection_path' => $this->collectionPath($mapping),
+                    'collection_extracted_item_count' => count($collection),
+                    'mapped_item_count' => count($mapped),
+                    'matcher_input_count' => $pageMatcherInputCount,
+                    'matcher_output_count' => $pageMatcherOutputCount,
+                    'candidate_budget_remaining' => $remainingBudget,
+                    'candidate_budget_clipped_count' => max(0, count($collection) - $remainingBudget),
+                ]);
 
                 [$remoteMoreAvailable, $nextUrl, $page, $cursor] = $this->nextLivePosition($mapping, $response['data'], $page, $cursor);
                 $moreAvailable = $moreAvailable || count($collection) > $plan->effectiveResultLimit || $remoteMoreAvailable;
@@ -142,7 +179,7 @@ class RuntimeApiOperationExecutor
             }
 
             if ($plan->localSorts !== []) {
-                $records = app(LiveReadRecordMatcher::class)->sort($records, $plan->localSorts);
+                $records = app(LiveReadRecordMatcher::class)->sort($records, array_values($plan->localSorts));
             }
             $records = array_slice($records, 0, $plan->effectiveResultLimit);
 
@@ -157,6 +194,13 @@ class RuntimeApiOperationExecutor
                     'effective_result_limit' => $plan->effectiveResultLimit,
                     'count_requirement_satisfied' => count($records) >= $plan->requestedMinimum,
                     'confirmed_empty' => $records === [] && ! $truncated && ! $remoteMoreAvailable,
+                    'raw_response_item_count' => $rawResponseItemCount,
+                    'collection_extracted_item_count' => $collectionExtractedItemCount,
+                    'mapped_item_count' => $mappedItemCount,
+                    'deduplicated_candidate_count' => $deduplicatedCandidateCount,
+                    'matcher_input_count' => $matcherInputCount,
+                    'matcher_output_count' => $matcherOutputCount,
+                    'candidate_budget_clipped_count' => $candidateBudgetClippedCount,
                 ],
             ], $lastStatus);
         } catch (GraphqlRequestException $exception) {
@@ -314,8 +358,8 @@ class RuntimeApiOperationExecutor
                 'operation' => $runtimeOperation->operation->key,
                 'status' => $response['status'],
                 'response_keys' => array_keys($response['data']),
-                'response_is_list' => array_is_list($response['data']),
-                'response_item_count' => array_is_list($response['data']) ? count($response['data']) : null,
+                'response_is_list' => $this->isList($response['data']),
+                'response_item_count' => $this->isList($response['data']) ? count($response['data']) : null,
             ]);
 
             $mappedResponse = $this->mapResponse($runtimeOperation, $response['data']);
@@ -865,7 +909,7 @@ class RuntimeApiOperationExecutor
         }
     }
 
-    /** @param array<string, mixed> $mapping @return array<string, array<string, mixed>> */
+    /** @return array<string, array<string, mixed>> */
     private function mappedFieldNames(RuntimeApiOperation $runtimeOperation): array
     {
         return app(LiveReadQueryPlanner::class)->fields($runtimeOperation->operation);
@@ -879,7 +923,11 @@ class RuntimeApiOperationExecutor
         return max(1, (int) ($pagination['start'] ?? 1));
     }
 
-    /** @param array<string, mixed> $mapping @param array<string, mixed> $response */
+    /**
+     * @param  array<string, mixed>  $mapping
+     * @param  array<string, mixed>  $response
+     * @return list<array<string, mixed>>
+     */
     private function responseCollection(array $mapping, array $response): array
     {
         $definition = is_array($mapping['collection'] ?? null) ? $mapping['collection'] : null;
@@ -896,7 +944,78 @@ class RuntimeApiOperationExecutor
         return array_values(array_filter($value, 'is_array'));
     }
 
+    /** @param array<string, mixed> $response */
+    private function rawResponseItemCount(array $response): int
+    {
+        if ($this->isList($response)) {
+            return count($response);
+        }
+
+        foreach (['data', 'items', 'products', 'results'] as $key) {
+            $value = $response[$key] ?? null;
+
+            if (is_array($value) && array_is_list($value)) {
+                return count($value);
+            }
+        }
+
+        return 0;
+    }
+
+    /** @param array<int|string, mixed> $value */
+    private function isList(array $value): bool
+    {
+        return array_is_list($value);
+    }
+
     /** @param array<string, mixed> $mapping */
+    private function collectionPath(array $mapping): string
+    {
+        $collection = $mapping['collection'] ?? null;
+
+        return is_array($collection) && is_string($collection['path'] ?? null)
+            ? $collection['path']
+            : (string) ($mapping['records_path'] ?? 'root');
+    }
+
+    private function debugUrl(string $url): string
+    {
+        $parts = parse_url($url);
+
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+            return '[invalid-url]';
+        }
+
+        return $parts['scheme'].'://'.$parts['host'].($parts['port'] ?? null ? ':'.$parts['port'] : '').($parts['path'] ?? '');
+    }
+
+    private function debugValue(mixed $value, ?string $key = null): mixed
+    {
+        if ($key !== null && preg_match('/(?:authorization|credential|password|secret|token|api[_-]?key)/i', $key) === 1) {
+            return '[REDACTED]';
+        }
+
+        if (is_array($value)) {
+            $result = [];
+
+            foreach ($value as $childKey => $childValue) {
+                $result[$childKey] = $this->debugValue($childValue, is_string($childKey) ? $childKey : null);
+            }
+
+            return $result;
+        }
+
+        if (is_string($value)) {
+            return Str::limit($value, 500);
+        }
+
+        return is_scalar($value) || $value === null ? $value : '[REDACTED]';
+    }
+
+    /**
+     * @param  array<string, mixed>  $mapping
+     * @return array{data: array<string, mixed>, status: int, url: string}
+     */
     private function livePageResponse(
         RuntimeApiOperation $runtimeOperation,
         LiveReadQueryPlan $plan,
@@ -935,6 +1054,17 @@ class RuntimeApiOperationExecutor
             }
         }
 
+        logger()->info('Live catalog remote request prepared.', [
+            'bot_id' => $runtimeOperation->bot->id,
+            'team_id' => $runtimeOperation->bot->team_id,
+            'operation_id' => $runtimeOperation->operation->id,
+            'operation' => $runtimeOperation->operation->key,
+            'method' => $request['method'],
+            'url' => $this->debugUrl($request['url']),
+            'query' => $this->debugValue($request['query']),
+            'body' => $this->debugValue($request['body']),
+        ]);
+
         return $this->requestExecutor->executeRequest(
             $runtimeOperation->operation,
             $runtimeOperation->dataSource,
@@ -945,7 +1075,11 @@ class RuntimeApiOperationExecutor
         );
     }
 
-    /** @param array<string, mixed> $mapping @param array<string, mixed> $response @return array{0: bool, 1: ?string, 2: int, 3: mixed} */
+    /**
+     * @param  array<string, mixed>  $mapping
+     * @param  array<string, mixed>  $response
+     * @return array{0: bool, 1: ?string, 2: int, 3: mixed}
+     */
     private function nextLivePosition(array $mapping, array $response, int $page, mixed $cursor): array
     {
         $pagination = (array) ($mapping['pagination'] ?? []);
@@ -972,7 +1106,11 @@ class RuntimeApiOperationExecutor
         return [false, null, $page, $cursor];
     }
 
-    /** @param array<string, mixed> $record @param list<array<string, mixed>> $filters @param array<string, array<string, mixed>> $fields */
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  list<array<string, mixed>>  $filters
+     * @param  array<string, array<string, mixed>>  $fields
+     */
     private function matchesMappedRecord(array $record, array $filters, array $fields): bool
     {
         return app(LiveReadRecordMatcher::class)->matches($record, $filters, $fields);

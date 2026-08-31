@@ -17,6 +17,7 @@ use App\Services\Search\Enums\SearchSortDirection;
 use App\Services\Search\Exceptions\InvalidSearchCriteriaException;
 use App\Services\Search\SearchService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Str;
 use Throwable;
 
 class SearchCatalogTool implements BotTool
@@ -123,6 +124,26 @@ class SearchCatalogTool implements BotTool
      */
     public function execute(Bot $bot, array $arguments, ToolExecutionContext $context): ToolResult
     {
+        $normalizedSearchText = is_string($arguments['text'] ?? null)
+            ? trim((string) $arguments['text']) ?: null
+            : null;
+
+        logger()->info('AI search_catalog tool invoked.', [
+            'bot_id' => $bot->id,
+            'team_id' => $bot->team_id,
+            'tool' => 'search_catalog',
+            'original_customer_message' => Str::limit($context->userMessage === null ? '' : (string) $context->userMessage->content, 1000),
+            'tool_arguments' => [
+                'dataset' => $arguments['dataset'] ?? null,
+                'text' => $arguments['text'] ?? null,
+                'filters' => $arguments['filters'] ?? [],
+                'sorts' => $arguments['sorts'] ?? [],
+                'limit' => $arguments['limit'] ?? null,
+                'result_count' => $arguments['result_count'] ?? null,
+            ],
+            'normalized_search_text' => $normalizedSearchText,
+        ]);
+
         if ((int) $context->bot->id !== (int) $bot->id
             || (int) $context->team->id !== (int) $bot->team_id) {
             return ToolResult::failure(
@@ -237,8 +258,29 @@ class SearchCatalogTool implements BotTool
             return ToolResult::failure('search_unavailable', 'The catalog search is temporarily unavailable.');
         }
 
+        $query = LiveReadQuery::fromArguments($arguments);
         $runtimeArguments = $this->liveArguments($operation->operation, $arguments);
-        $plan = $this->liveReadPlanner->plan($operation->operation, LiveReadQuery::fromArguments($arguments), $runtimeArguments);
+        $mappingValue = $operation->operation->getAttribute('request_mapping');
+        $mapping = is_array($mappingValue) ? $mappingValue : [];
+        $liveMapping = is_array($mapping['live_query'] ?? null) ? $mapping['live_query'] : [];
+        $plan = $this->liveReadPlanner->plan($operation->operation, $query, $runtimeArguments);
+
+        logger()->info('Live catalog search plan created.', [
+            'bot_id' => $bot->id,
+            'team_id' => $bot->team_id,
+            'operation_id' => $operation->operation->id,
+            'operation' => $operation->operation->key,
+            'source_id' => $operation->dataSource->id,
+            'normalized_search_text' => $query->searchText,
+            'configured_remote_search_parameter' => $liveMapping['search_text'] ?? null,
+            'runtime_arguments' => $runtimeArguments,
+            'remote_arguments' => $plan->remoteArguments,
+            'local_search_text' => $plan->localSearchText,
+            'requested_minimum' => $plan->requestedMinimum,
+            'effective_result_limit' => $plan->effectiveResultLimit,
+            'candidate_budget' => $plan->candidateBudget,
+            'page_budget' => $plan->pageBudget,
+        ]);
         $result = $this->operationExecutor->executeLiveRead($operation, $plan);
 
         if (! $result->success) {
@@ -246,10 +288,22 @@ class SearchCatalogTool implements BotTool
         }
 
         $items = $this->normalizeLiveItems((array) ($result->data['records'] ?? []));
+        $liveReadMeta = (array) ($result->data['meta'] ?? []);
+        $liveReadMeta['product_mapped_count'] = count($items);
+
+        logger()->info('Live catalog search products mapped.', [
+            'bot_id' => $bot->id,
+            'team_id' => $bot->team_id,
+            'operation_id' => $operation->operation->id,
+            'operation' => $operation->operation->key,
+            'normalized_search_text' => $query->searchText,
+            'product_mapped_count' => count($items),
+            'live_read_meta' => $liveReadMeta,
+        ]);
 
         return ToolResult::success(
             ['ok' => true, 'search' => ['dataset' => 'live', 'count' => count($items), 'items' => $items]],
-            ['card_source' => ['live_items' => $items], 'live_read' => $result->data['meta'] ?? []],
+            ['card_source' => ['live_items' => $items], 'live_read' => $liveReadMeta],
         );
     }
 

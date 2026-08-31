@@ -14,11 +14,14 @@ final class LiveReadQueryPlanner
         $fields = $this->fields($operation);
         $localFilters = [];
         $localSearchText = null;
-        $mapping = (array) $operation->request_mapping;
+        $mappingValue = $operation->getAttribute('request_mapping');
+        $mapping = is_array($mappingValue) ? $mappingValue : [];
         $liveMapping = is_array($mapping['live_query'] ?? null) ? $mapping['live_query'] : [];
 
         if ($query->searchText !== null && is_string($liveMapping['search_text'] ?? null)) {
-            $remoteArguments[$liveMapping['search_text']] = $query->searchText;
+            $remoteParameter = $liveMapping['search_text'];
+            $argument = $this->requestArgumentForRemoteParameter($operation, $remoteParameter);
+            $remoteArguments[$argument ?? $remoteParameter] = $query->searchText;
         } elseif ($query->searchText !== null) {
             $localSearchText = $query->searchText;
         }
@@ -88,10 +91,13 @@ final class LiveReadQueryPlanner
     /** @return array<string, array<string, mixed>> */
     public function fields(ApiOperation $operation): array
     {
-        $mapping = (array) $operation->response_mapping;
-        $source = is_array($mapping['collection'] ?? null)
-            ? ($mapping['collection']['fields'] ?? [])
+        $mappingValue = $operation->getAttribute('response_mapping');
+        $mapping = is_array($mappingValue) ? $mappingValue : [];
+        $collection = $mapping['collection'] ?? null;
+        $source = is_array($collection)
+            ? ($collection['fields'] ?? [])
             : ($mapping['output'] ?? $mapping['fields'] ?? []);
+        $source = is_array($source) ? $source : [];
         $fields = [];
 
         foreach ((array) $source as $name => $definition) {
@@ -147,7 +153,7 @@ final class LiveReadQueryPlanner
         if ($operator === 'between' && (! is_array($value) || count($value) !== 2)) {
             throw new InvalidArgumentException('The between operator requires two values.');
         }
-        if ($operator === 'between' && is_array($value) && count($value) === 2 && $value[0] > $value[1]) {
+        if ($operator === 'between' && count($value) === 2 && $value[0] > $value[1]) {
             throw new InvalidArgumentException('The between operator requires an ascending range.');
         }
         $values = $operator === 'in' || $operator === 'between' ? (array) $value : [$value];
@@ -168,5 +174,27 @@ final class LiveReadQueryPlanner
         } catch (Throwable) {
             return $default;
         }
+    }
+
+    private function requestArgumentForRemoteParameter(ApiOperation $operation, string $remoteParameter): ?string
+    {
+        $mappingValue = $operation->getAttribute('request_mapping');
+        $mapping = is_array($mappingValue) ? $mappingValue : [];
+
+        foreach (['query', 'body'] as $section) {
+            $sectionMapping = $mapping[$section] ?? null;
+
+            if (! is_array($sectionMapping)) {
+                continue;
+            }
+
+            foreach ($sectionMapping as $argument => $destination) {
+                if (is_string($argument) && $destination === $remoteParameter) {
+                    return $argument;
+                }
+            }
+        }
+
+        return null;
     }
 }

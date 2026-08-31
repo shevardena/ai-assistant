@@ -116,7 +116,7 @@ test('live catalog mappings translate canonical search arguments to common API p
     ]);
 });
 
-test('live catalog search sends the AI-selected canonical term through the remote mapping', function () {
+test('live catalog search sends canonical Camry and Prius terms through the remote mapping', function () {
     [, $team, $bot] = botToolRegistryContext(false);
     $source = DataSource::factory()->ready()->create([
         'team_id' => $team->id,
@@ -130,11 +130,11 @@ test('live catalog search sends the AI-selected canonical term through the remot
         'path' => '/products',
         'request_schema' => [
             'type' => 'object',
-            'properties' => ['q' => ['type' => 'string']],
+            'properties' => ['search' => ['type' => 'string']],
             'required' => [],
         ],
         'request_mapping' => [
-            'query' => ['q' => 'q'],
+            'query' => ['search' => 'q'],
             'live_query' => ['search_text' => 'q'],
         ],
         'response_mapping' => [
@@ -158,17 +158,21 @@ test('live catalog search sends the AI-selected canonical term through the remot
 
     Http::preventStrayRequests();
     Http::fake([
-        'https://api.example.test/*' => Http::response([
-            'data' => [[
-                'id' => 35,
-                'name' => '07-09 CAMRY - ბამპერი (წინა)',
-                'price' => '160.00',
-            ]],
-        ]),
+        'https://api.example.test/*' => function ($request) {
+            $isPrius = str_contains($request->url(), 'q=prius');
+
+            return Http::response([
+                'data' => [[
+                    'id' => $isPrius ? 51 : 35,
+                    'name' => $isPrius ? 'TOYOTA PRIUS - ფარი' : '07-09 CAMRY - ბამპერი (წინა)',
+                    'price' => $isPrius ? '90.00' : '160.00',
+                ]],
+            ]);
+        },
     ]);
 
     $tool = app(BotToolRegistry::class)->find($bot, 'search_catalog');
-    $result = $tool->execute(
+    $camryResult = $tool->execute(
         $bot,
         [
             'dataset' => null,
@@ -185,10 +189,38 @@ test('live catalog search sends the AI-selected canonical term through the remot
         ),
     );
 
-    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'q=camry'));
+    $priusResult = $tool->execute(
+        $bot,
+        [
+            'dataset' => null,
+            'text' => 'prius',
+            'filters' => [],
+            'sorts' => [],
+            'limit' => 10,
+            'result_count' => null,
+        ],
+        ToolExecutionContext::forBot(
+            $bot,
+            userMessage: new Message(['content' => 'სალამი, პრისუზე რამე გაქვთ?']),
+            mode: RuntimeMode::Test,
+        ),
+    );
 
-    expect($result->data['search']['count'])->toBe(1)
-        ->and($result->data['search']['items'][0]['title'])->toBe('07-09 CAMRY - ბამპერი (წინა)');
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'q=camry'));
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'q=prius'));
+
+    expect($camryResult->data['search']['count'])->toBe(1)
+        ->and($camryResult->data['search']['items'][0]['title'])->toBe('07-09 CAMRY - ბამპერი (წინა)')
+        ->and($camryResult->metadata['live_read'])->toMatchArray([
+            'raw_response_item_count' => 1,
+            'collection_extracted_item_count' => 1,
+            'mapped_item_count' => 1,
+            'matcher_input_count' => 1,
+            'matcher_output_count' => 1,
+            'product_mapped_count' => 1,
+        ])
+        ->and($priusResult->data['search']['count'])->toBe(1)
+        ->and($priusResult->data['search']['items'][0]['title'])->toBe('TOYOTA PRIUS - ფარი');
 });
 
 test('the registered tool produces a strict schema without internal implementation details', function () {

@@ -129,9 +129,9 @@ class RestApiRequestExecutor
                 'operation' => $operation->key,
                 'source_id' => $dataSource->id,
                 'method' => Str::upper($method),
-                'url' => $url,
-                'query_keys' => array_keys($query),
-                'payload_keys' => array_keys($payload),
+                'url' => $this->debugUrl($url),
+                'query' => $this->debugValue($query),
+                'body' => $this->debugValue($payload),
             ]);
 
             $response = $request->send(Str::upper($method), $url, $options);
@@ -141,7 +141,7 @@ class RestApiRequestExecutor
                 'operation' => $operation->key,
                 'source_id' => $dataSource->id,
                 'method' => Str::upper($method),
-                'url' => $url,
+                'url' => $this->debugUrl($url),
                 'exception' => $exception::class,
                 'transport_error' => Str::limit($exception->getMessage(), 500),
             ]);
@@ -158,7 +158,7 @@ class RestApiRequestExecutor
                 'operation' => $operation->key,
                 'source_id' => $dataSource->id,
                 'method' => Str::upper($method),
-                'url' => $url,
+                'url' => $this->debugUrl($url),
                 'status' => $status,
                 'exception' => $exception::class,
             ]);
@@ -509,6 +509,40 @@ class RestApiRequestExecutor
             'connection',
             'transfer-encoding',
         ], true);
+    }
+
+    private function debugUrl(string $url): string
+    {
+        $parts = parse_url($url);
+
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+            return '[invalid-url]';
+        }
+
+        return $parts['scheme'].'://'.$parts['host'].($parts['port'] ?? null ? ':'.$parts['port'] : '').($parts['path'] ?? '');
+    }
+
+    private function debugValue(mixed $value, ?string $key = null): mixed
+    {
+        if ($key !== null && preg_match('/(?:authorization|credential|password|secret|token|api[_-]?key)/i', $key) === 1) {
+            return '[REDACTED]';
+        }
+
+        if (is_array($value)) {
+            $result = [];
+
+            foreach ($value as $childKey => $childValue) {
+                $result[$childKey] = $this->debugValue($childValue, is_string($childKey) ? $childKey : null);
+            }
+
+            return $result;
+        }
+
+        if (is_string($value)) {
+            return Str::limit($value, 500);
+        }
+
+        return is_scalar($value) || $value === null ? $value : '[REDACTED]';
     }
 
     private function isForbiddenIp(string $host): bool

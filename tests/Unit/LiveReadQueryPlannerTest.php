@@ -6,12 +6,12 @@ use App\Services\Api\LiveRead\LiveReadQueryPlanner;
 use App\Services\Api\LiveRead\LiveReadRecordMatcher;
 use App\Services\Imports\SourcePathResolver;
 
-function liveOperation(array $mapping): ApiOperation
+function liveOperation(array $mapping, array $requestMapping = []): ApiOperation
 {
     $operation = Mockery::mock(ApiOperation::class);
-    $operation->shouldReceive('getAttribute')->with('request_mapping')->andReturn([]);
+    $operation->shouldReceive('getAttribute')->with('request_mapping')->andReturn($requestMapping);
     $operation->shouldReceive('getAttribute')->with('response_mapping')->andReturn($mapping);
-    $operation->shouldReceive('__get')->with('request_mapping')->andReturn([]);
+    $operation->shouldReceive('__get')->with('request_mapping')->andReturn($requestMapping);
     $operation->shouldReceive('__get')->with('response_mapping')->andReturn($mapping);
 
     return $operation;
@@ -130,6 +130,25 @@ test('uses local unicode text search when remote search is unavailable', functio
             'Camry',
             ['title' => ['type' => 'string', 'searchable' => true]],
         ))->toBeFalse();
+});
+
+test('maps a configured remote search destination back to its operation argument', function () {
+    $operation = liveOperation([
+        'collection' => [
+            'path' => 'data',
+            'fields' => ['name' => ['path' => 'name', 'type' => 'string']],
+        ],
+    ], [
+        'query' => ['search' => 'q'],
+        'live_query' => ['search_text' => 'q'],
+    ]);
+
+    $plan = (new LiveReadQueryPlanner)->plan($operation, LiveReadQuery::fromArguments([
+        'text' => 'camry',
+    ]));
+
+    expect($plan->remoteArguments)->toBe(['search' => 'camry'])
+        ->and($plan->localSearchText)->toBeNull();
 });
 
 test('exposes safe field metadata and rejects non-queryable fields', function () {
