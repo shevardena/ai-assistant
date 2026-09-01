@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\ApiOperationMode;
+use App\Enums\PriceSemanticRole;
 use App\Models\DataSource;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
@@ -75,6 +76,7 @@ class StoreApiOperationRequest extends FormRequest
             'live_query.constraints.*.remote_to_parameter' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]{0,254}$/'],
             'response_fields' => ['nullable', 'array'],
             'response_fields.*.type' => ['nullable', Rule::in(['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'])],
+            'response_fields.*.semantic_role' => ['nullable', Rule::in(array_column(PriceSemanticRole::cases(), 'value'))],
             'response_fields.*.searchable' => ['nullable', 'boolean'],
             'response_fields.*.filterable' => ['nullable', 'boolean'],
             'response_fields.*.sortable' => ['nullable', 'boolean'],
@@ -162,7 +164,59 @@ class StoreApiOperationRequest extends FormRequest
             }
 
             $this->validateInputMapping($validator);
+            $this->validateSemanticPriceRoles($validator);
         }];
+    }
+
+    private function validateSemanticPriceRoles(Validator $validator): void
+    {
+        $definitions = [];
+        $mapping = $this->input('response_mapping', []);
+        $mappedFields = is_array($mapping)
+            ? (is_array(data_get($mapping, 'collection.fields'))
+                ? data_get($mapping, 'collection.fields')
+                : ($mapping['output'] ?? $mapping['fields'] ?? null))
+            : null;
+
+        if (is_array($mappedFields)) {
+            foreach ($mappedFields as $name => $definition) {
+                if (is_array($definition)) {
+                    $definitions[] = ['_source' => 'response_mapping', 'name' => $name, ...$definition];
+                }
+            }
+        } else {
+            foreach ((array) $this->input('response_fields', []) as $definition) {
+                if (is_array($definition)) {
+                    $definitions[] = ['_source' => 'response_fields', ...$definition];
+                }
+            }
+        }
+
+        $seenRoles = [];
+        foreach ($definitions as $definition) {
+            $roleValue = $definition['semantic_role'] ?? null;
+            if ($roleValue === null || $roleValue === '') {
+                continue;
+            }
+
+            $role = PriceSemanticRole::tryFrom((string) $roleValue);
+            $type = strtolower(trim((string) ($definition['type'] ?? $definition['data_type'] ?? 'string')));
+            $errorKey = $definition['_source'] ?? 'response_fields';
+
+            if (! $role instanceof PriceSemanticRole || ! $role->supportsType($type)) {
+                $validator->errors()->add($errorKey, 'Semantic price roles require a compatible numeric field type.');
+
+                continue;
+            }
+
+            if (isset($seenRoles[$role->value])) {
+                $validator->errors()->add($errorKey, "Only one field may use the [{$role->value}] semantic role.");
+
+                continue;
+            }
+
+            $seenRoles[$role->value] = true;
+        }
     }
 
     /** @param array<mixed, mixed> $values */

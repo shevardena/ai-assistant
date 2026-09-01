@@ -35,16 +35,19 @@ class DatasetImportController extends Controller
             ]);
         }
 
-        if ($sourceRun->status === 'completed') {
+        if (in_array($sourceRun->status, ['completed', 'partial'], true)) {
             $this->typesenseDatasetSync->syncAfterImport($dataset);
         }
 
-        $message = $sourceRun->status === 'completed'
-            ? __('Dataset import completed.')
-            : __('Dataset import finished with no valid records.');
+        $message = match ($sourceRun->status) {
+            'completed' => __('Dataset import completed.'),
+            'partial' => __('Dataset import completed with some invalid rows. Review the import diagnostics.'),
+            'validation_failed' => __('No valid records were imported. Review the import diagnostics.'),
+            default => __('Dataset import failed. Review the import history.'),
+        };
 
         Inertia::flash('toast', [
-            'type' => $sourceRun->status === 'completed' ? 'success' : 'error',
+            'type' => in_array($sourceRun->status, ['completed', 'partial'], true) ? 'success' : 'error',
             'message' => $message,
         ]);
 

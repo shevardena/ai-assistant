@@ -13,6 +13,7 @@ use App\Services\Ai\Tools\ToolResult;
 use App\Services\Conversations\Blocks\ConversationBlockNormalizer;
 use App\Services\Conversations\ConversationCycleLogger;
 use App\Services\Conversations\ConversationHandoffService;
+use App\Services\Widget\WidgetImageAttachmentService;
 use Illuminate\Support\Str;
 use JsonException;
 use Throwable;
@@ -27,10 +28,11 @@ class AiSearchOrchestrator
         private readonly BotToolRegistry $toolRegistry,
         private readonly ConversationBlockNormalizer $blockNormalizer,
         private readonly ConversationCycleLogger $cycleLogger,
+        private readonly WidgetImageAttachmentService $imageAttachments,
     ) {}
 
     /**
-     * @param  list<array{role: 'user'|'assistant', content: string}>  $history
+     * @param  list<array{role: 'user'|'assistant', content: string, attachments?: list<array<string, mixed>>}>  $history
      * @param  array<string, mixed>  $runtimeContext
      */
     public function run(
@@ -61,7 +63,41 @@ class AiSearchOrchestrator
             runtimeContext: $runtimeContext,
             mode: $mode,
         );
-        $input = [...$history, ['role' => 'user', 'content' => $message]];
+        $latestImageHistoryIndex = null;
+
+        foreach ($history as $index => $item) {
+            if (is_array($item['attachments'] ?? null) && $item['attachments'] !== []) {
+                $latestImageHistoryIndex = $index;
+            }
+        }
+
+        $historyInput = [];
+
+        foreach ($history as $index => $item) {
+            $historyInput[] = [
+                'role' => $item['role'],
+                'content' => $this->imageAttachments->inputContent(
+                    (string) $item['content'],
+                    $index === $latestImageHistoryIndex && is_array($item['attachments'] ?? null)
+                        ? $item['attachments']
+                        : [],
+                ),
+            ];
+        }
+
+        $input = [
+            ...$historyInput,
+            [
+                'role' => 'user',
+                'content' => $this->imageAttachments->inputContent(
+                    $message,
+                    is_array(data_get($userMessage?->metadata, 'attachments'))
+                        ? data_get($userMessage?->metadata, 'attachments')
+                        : [],
+                ),
+            ],
+        ];
+        $currentImageCount = $this->imageCount([$input[array_key_last($input)] ?? []]);
 
         if ($runtimeContext !== []) {
             try {
@@ -101,6 +137,7 @@ class AiSearchOrchestrator
                     $tools,
                 ),
                 'input_message_count' => count($input),
+                'image_count' => $this->imageCount($input),
                 'input' => config('chatbot_runtime.log_full_prompt', false) ? $input : null,
                 'instructions' => config('chatbot_runtime.log_full_prompt', false) ? $instructions : null,
                 'instructions_sha256' => hash('sha256', $instructions),
@@ -168,7 +205,7 @@ class AiSearchOrchestrator
                         $usage,
                         $cardSources,
                         $blocks,
-                        [['tool' => 'search_catalog', 'outcome' => 'non_knowledge_failure']],
+                        [['tool' => 'search_catalog', 'outcome' => 'failed']],
                         $actionProposals,
                     );
                 }
@@ -203,6 +240,22 @@ class AiSearchOrchestrator
                     'call_id' => $toolCall['call_id'] ?? null,
                     'arguments' => $this->decodedArguments($toolCall['arguments'] ?? null),
                 ]);
+                if ($currentImageCount > 0 && ($toolCall['name'] ?? null) === 'search_catalog') {
+                    $arguments = $this->decodedArguments($toolCall['arguments'] ?? null);
+                    $searchText = is_array($arguments) && is_string($arguments['text'] ?? null)
+                        ? $arguments['text']
+                        : null;
+                    $this->cycleLogger->event('image_catalog.intent', [
+                        'has_image' => true,
+                        'customer_text' => Str::limit($message, 500),
+                        'search_text' => $searchText,
+                        'constraints' => is_array($arguments) && is_array($arguments['constraints'] ?? null)
+                            ? $arguments['constraints']
+                            : [],
+                        'identifier_detected' => is_string($searchText)
+                            && preg_match('/\b[A-Z0-9][A-Z0-9_-]{5,}\b/i', $searchText) === 1,
+                    ]);
+                }
                 $result = $this->executeToolCall($bot, $toolCall, $executionContext);
                 $forceCatalogSearch = false;
                 $toolOutcomes[] = $this->toolOutcome($toolCall, $result);
@@ -215,6 +268,7 @@ class AiSearchOrchestrator
                     'search_count' => is_array($result->data['search']['items'] ?? null)
                         ? count($result->data['search']['items'])
                         : null,
+                    'search_outcome' => $result->data['search']['outcome'] ?? null,
                     'live_read' => $result->metadata['live_read'] ?? null,
                     'selected_query' => $result->metadata['selected_query'] ?? null,
                     'search_attempts' => $result->metadata['attempts'] ?? null,
@@ -325,6 +379,17 @@ class AiSearchOrchestrator
         throw new AiException('The AI search exceeded its tool-call limit.');
     }
 
+    /** @param list<array<string, mixed>> $input */
+    private function imageCount(array $input): int
+    {
+        return collect($input)
+            ->filter(static fn (array $item): bool => is_array($item['content'] ?? null))
+            ->sum(static fn (array $item): int => count(array_filter(
+                $item['content'],
+                static fn (mixed $content): bool => is_array($content) && ($content['type'] ?? null) === 'input_image',
+            )));
+    }
+
     /**
      * @param  array<string, mixed>  $toolCall
      * @return array{tool: string, outcome: string}
@@ -338,7 +403,11 @@ class AiSearchOrchestrator
             $nonKnowledgeFailure = $tool !== 'lookup_faq'
                 && $tool !== 'search_catalog';
 
-            if ($tool === 'search_catalog' || str_ends_with($error, '_unavailable') || $nonKnowledgeFailure) {
+            if ($tool === 'search_catalog') {
+                return ['tool' => $tool, 'outcome' => 'failed'];
+            }
+
+            if (str_ends_with($error, '_unavailable') || $nonKnowledgeFailure) {
                 return ['tool' => $tool, 'outcome' => 'non_knowledge_failure'];
             }
 
@@ -358,13 +427,25 @@ class AiSearchOrchestrator
 
         if ($tool === 'search_catalog') {
             $search = $result->data['search'] ?? null;
+            $outcome = is_array($search) && is_string($search['outcome'] ?? null)
+                ? $search['outcome']
+                : null;
+
+            if (in_array($outcome, ['catalog_success', 'partial_success', 'no_results'], true)) {
+                return ['tool' => $tool, 'outcome' => $outcome];
+            }
+
             $count = is_array($search) && is_int($search['count'] ?? null)
                 ? $search['count']
                 : (is_array($search['items'] ?? null) ? count($search['items']) : 0);
+            $partial = is_array($result->metadata['source_errors'] ?? null)
+                && $result->metadata['source_errors'] !== [];
 
             return [
                 'tool' => $tool,
-                'outcome' => $count > 0 ? 'knowledge_success' : 'no_results',
+                'outcome' => $count === 0
+                    ? 'no_results'
+                    : ($partial ? 'partial_success' : 'catalog_success'),
             ];
         }
 
@@ -496,7 +577,7 @@ class AiSearchOrchestrator
     private function hasFailedCatalogSearch(array $toolOutcomes): bool
     {
         foreach ($toolOutcomes as $outcome) {
-            if ($outcome['tool'] === 'search_catalog' && $outcome['outcome'] === 'non_knowledge_failure') {
+            if ($outcome['tool'] === 'search_catalog' && $outcome['outcome'] === 'failed') {
                 return true;
             }
         }

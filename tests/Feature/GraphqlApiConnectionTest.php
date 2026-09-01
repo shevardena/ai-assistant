@@ -201,6 +201,7 @@ test('GraphQL relay imports normalize records and follow cursors once', function
     $team = $user->currentTeam;
     $source = DataSource::factory()->create(['team_id' => $team->id, 'type' => 'graphql_api', 'config' => ['endpoint' => 'https://api.example.test/graphql', 'auth_type' => 'none']]);
     $dataset = Dataset::factory()->create(['team_id' => $team->id, 'data_source_id' => $source->id, 'primary_key_path' => 'id']);
+    DatasetField::factory()->create(['dataset_id' => $dataset->id, 'source_path' => 'id', 'key' => 'id', 'data_type' => 'string']);
     DatasetField::factory()->create(['dataset_id' => $dataset->id, 'source_path' => 'name', 'key' => 'name', 'data_type' => 'string']);
     $operation = ApiOperation::factory()->create([
         'data_source_id' => $source->id,

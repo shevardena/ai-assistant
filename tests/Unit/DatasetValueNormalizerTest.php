@@ -35,6 +35,15 @@ test('normalizes the supported DatasetField scalar types', function () {
         ->and($normalizer->normalize(normalizerField('url'), 'https://example.com'))->toBe('https://example.com');
 });
 
+test('preserves catalog values that are numeric strings or signed percentages', function () {
+    $normalizer = new DatasetValueNormalizer;
+
+    expect($normalizer->normalize(normalizerField('integer'), '999'))->toBe(999)
+        ->and($normalizer->normalize(normalizerField('integer'), '2999'))->toBe(2999)
+        ->and($normalizer->normalize(normalizerField('string'), '-30%'))->toBe('-30%')
+        ->and($normalizer->normalize(normalizerField('decimal'), '2999.50'))->toBe(2999.5);
+});
+
 test('applies the supported field normalizers', function () {
     $normalizer = new DatasetValueNormalizer;
 

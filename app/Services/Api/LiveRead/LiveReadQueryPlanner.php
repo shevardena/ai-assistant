@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\LiveRead;
 
+use App\Enums\PriceSemanticRole;
 use App\Models\ApiOperation;
 use App\Services\Conversations\ConversationCycleLogger;
 use InvalidArgumentException;
@@ -26,6 +27,9 @@ final class LiveReadQueryPlanner
         $remoteConstraints = [];
         $localConstraints = [];
         $unsupportedConstraints = [];
+        $remoteFilters = [];
+        $unsupportedFilters = [];
+        $unsupportedSorts = [];
         $mappingValue = $operation->getAttribute('request_mapping');
         $mapping = is_array($mappingValue) ? $mappingValue : [];
         $liveMapping = is_array($mapping['live_query'] ?? null) ? $mapping['live_query'] : [];
@@ -46,19 +50,60 @@ final class LiveReadQueryPlanner
         foreach ($query->filters as $filter) {
             $field = (string) ($filter['field'] ?? '');
             $definition = $fields[$field] ?? null;
-            if (! is_array($definition) || ($definition['queryable'] ?? false) !== true || ($definition['filterable'] ?? false) !== true) {
-                throw new InvalidArgumentException("The live field [{$field}] cannot be filtered.");
+            $requestedRole = $this->requestedSemanticRole($field);
+            if (! is_array($definition) || ($requestedRole instanceof PriceSemanticRole && ($definition['semantic_role'] ?? null) !== $requestedRole->value)) {
+                $unsupportedFilters[] = [
+                    ...$filter,
+                    'reason' => $requestedRole instanceof PriceSemanticRole
+                        ? 'semantic_role_not_mapped'
+                        : 'field_not_mapped',
+                ];
+
+                continue;
+            }
+
+            if (($definition['queryable'] ?? false) !== true || ($definition['filterable'] ?? false) !== true) {
+                $unsupportedFilters[] = [...$filter, 'reason' => 'field_not_filterable'];
+
+                continue;
             }
 
             $operator = (string) ($filter['operator'] ?? '');
-            $this->assertOperator($definition['type'], $operator);
-            $this->assertValue($definition['type'], $operator, $filter['value'] ?? null);
+            try {
+                $this->assertOperator($definition['type'], $operator);
+                $this->assertValue($definition['type'], $operator, $filter['value'] ?? null);
+            } catch (InvalidArgumentException) {
+                $unsupportedFilters[] = [...$filter, 'reason' => 'operator_or_value_unsupported'];
 
-            $remoteArgument = data_get($liveMapping, "filters.{$field}.{$operator}");
-            if (is_string($remoteArgument) && $remoteArgument !== '') {
-                $this->addRemoteParameter($operation, $remoteArguments, $remoteQuery, $remoteBody, $remoteArgument, $filter['value'] ?? null);
+                continue;
+            }
+
+            $resolvedField = (string) ($definition['resolved_field'] ?? $field);
+            $effectiveFilter = $this->effectiveFieldRequest($filter, $resolvedField);
+            $remoteDefinition = data_get($liveMapping, "filters.{$resolvedField}.{$operator}");
+            if ($remoteDefinition === null && $resolvedField !== $field) {
+                $remoteDefinition = data_get($liveMapping, "filters.{$field}.{$operator}");
+            }
+            $remote = $this->remoteFilter(
+                $remoteDefinition,
+                $operator,
+                $filter['value'] ?? null,
+            );
+            if ($remote !== null) {
+                foreach ($remote['values'] as $parameter => $remoteValue) {
+                    $this->addRemoteParameter($operation, $remoteArguments, $remoteQuery, $remoteBody, $parameter, $remoteValue);
+                }
+                $remoteFilters[] = [
+                    ...$effectiveFilter,
+                    'parameters' => $remote['values'],
+                    'strategy' => $remote['strategy'],
+                ];
             } else {
-                $localFilters[] = ['field' => $field, 'operator' => $operator, 'value' => $filter['value'] ?? null];
+                $localFilters[] = [
+                    ...$effectiveFilter,
+                    'operator' => $operator,
+                    'value' => $filter['value'] ?? null,
+                ];
             }
         }
 
@@ -74,7 +119,9 @@ final class LiveReadQueryPlanner
             }
 
             if ($type === 'year' && ! $this->validYearConstraintValue($value, $operator)) {
-                throw new InvalidArgumentException('The year constraint value is invalid.');
+                $unsupportedConstraints[] = ['type' => $type, 'operator' => $operator, 'value' => $value, 'reason' => 'value_unsupported'];
+
+                continue;
             }
 
             $definition = $this->constraintMapping($liveMapping, $type, $operator);
@@ -107,21 +154,66 @@ final class LiveReadQueryPlanner
         foreach ($query->sorts as $sort) {
             $field = (string) ($sort['field'] ?? '');
             $definition = $fields[$field] ?? null;
-            if (! is_array($definition) || ($definition['queryable'] ?? false) !== true || ($definition['sortable'] ?? false) !== true) {
-                throw new InvalidArgumentException("The live field [{$field}] cannot be sorted.");
+            $requestedRole = $this->requestedSemanticRole($field);
+            if (! is_array($definition) || ($requestedRole instanceof PriceSemanticRole && ($definition['semantic_role'] ?? null) !== $requestedRole->value)) {
+                $unsupportedSorts[] = [
+                    ...$sort,
+                    'reason' => $requestedRole instanceof PriceSemanticRole
+                        ? 'semantic_role_not_mapped'
+                        : 'field_not_mapped',
+                ];
+
+                continue;
+            }
+
+            if (($definition['queryable'] ?? false) !== true || ($definition['sortable'] ?? false) !== true) {
+                $unsupportedSorts[] = [...$sort, 'reason' => 'field_not_sortable'];
+
+                continue;
             }
 
             $direction = strtolower((string) ($sort['direction'] ?? 'asc'));
             if (! in_array($direction, ['asc', 'desc'], true)) {
-                throw new InvalidArgumentException('The live sort direction is invalid.');
+                $unsupportedSorts[] = [...$sort, 'reason' => 'direction_unsupported'];
+
+                continue;
             }
 
-            $remote = data_get($liveMapping, "sort.{$field}.{$direction}") ?? $definition['remote_sort'] ?? null;
-            if ($remote !== null) {
-                $remoteSorts[] = ['field' => $field, 'direction' => $direction, 'remote' => $remote];
-            } else {
-                $localSorts[] = ['field' => $field, 'direction' => $direction, 'type' => $definition['type']];
+            $resolvedField = (string) ($definition['resolved_field'] ?? $field);
+            $effectiveSort = $this->effectiveFieldRequest($sort, $resolvedField);
+            $remote = data_get($liveMapping, "sort.{$resolvedField}.{$direction}") ?? $definition['remote_sort'] ?? null;
+            if ($remote === null && $resolvedField !== $field) {
+                $remote = data_get($liveMapping, "sort.{$field}.{$direction}");
             }
+            if ($this->hasRemoteSort($remote)) {
+                $remoteSorts[] = [
+                    ...$effectiveSort,
+                    'direction' => $direction,
+                    'remote' => $remote,
+                    'global_guaranteed' => is_array($remote) ? ($remote['global_guaranteed'] ?? true) === true : true,
+                ];
+            } else {
+                $localSorts[] = [
+                    ...$effectiveSort,
+                    'direction' => $direction,
+                    'type' => $definition['type'],
+                ];
+            }
+        }
+
+        if ($localSorts !== [] && $remoteSorts !== []) {
+            foreach ($remoteSorts as $sort) {
+                $definition = $fields[(string) $sort['field']] ?? [];
+                $localSorts[] = [
+                    ...array_filter([
+                        'field' => $sort['field'],
+                        'semantic_field' => $sort['semantic_field'] ?? null,
+                    ], static fn (mixed $value): bool => $value !== null),
+                    'direction' => $sort['direction'],
+                    'type' => $definition['type'] ?? 'string',
+                ];
+            }
+            $remoteSorts = [];
         }
 
         $default = max(1, (int) $this->setting('live-read.default_results', 5));
@@ -130,6 +222,17 @@ final class LiveReadQueryPlanner
         $requestedMinimum = $count->minimum ?? ($count->mode === 'all' ? $default : $default);
         $requestedMaximum = $count->maximum ?? ($count->mode === 'minimum' ? max($default, $requestedMinimum) : $requestedMinimum);
         $effectiveLimit = min($maxResults, max(1, $requestedMaximum));
+        $globalSortGuaranteed = $localSorts === [] && ! in_array(
+            false,
+            array_map(
+                static fn (array $sort): bool => ($sort['global_guaranteed'] ?? true) === true,
+                $remoteSorts,
+            ),
+            true,
+        );
+        $sortMode = $localSorts !== []
+            ? 'local_bounded'
+            : ($remoteSorts === [] ? 'none' : ($globalSortGuaranteed ? 'remote_guaranteed' : 'remote_bounded'));
 
         $plan = new LiveReadQueryPlan(
             localSearchText: $localSearchText,
@@ -149,6 +252,11 @@ final class LiveReadQueryPlanner
             remoteConstraints: $remoteConstraints,
             localConstraints: $localConstraints,
             unsupportedConstraints: $unsupportedConstraints,
+            remoteFilters: $remoteFilters,
+            unsupportedFilters: $unsupportedFilters,
+            unsupportedSorts: $unsupportedSorts,
+            sortMode: $sortMode,
+            globalSortGuaranteed: $globalSortGuaranteed,
         );
 
         $this->cycleLogger?->event('live_read.plan.finalized', [
@@ -162,7 +270,14 @@ final class LiveReadQueryPlanner
             'local_filter_count' => count($plan->localFilters),
             'local_constraints' => $plan->localConstraints,
             'unsupported_constraints' => $plan->unsupportedConstraints,
+            'remote_filters' => $plan->remoteFilters,
+            'local_filters' => $plan->localFilters,
+            'unsupported_filters' => $plan->unsupportedFilters,
+            'unsupported_sorts' => $plan->unsupportedSorts,
             'remote_sort_count' => count($plan->remoteSorts),
+            'local_sort_count' => count($plan->localSorts),
+            'sort_mode' => $plan->sortMode,
+            'global_sort_guaranteed' => $plan->globalSortGuaranteed,
             'effective_result_limit' => $plan->effectiveResultLimit,
             'candidate_budget' => $plan->candidateBudget,
             'page_budget' => $plan->pageBudget,
@@ -187,6 +302,7 @@ final class LiveReadQueryPlanner
             : ($mapping['output'] ?? $mapping['fields'] ?? []);
         $source = is_array($source) ? $source : [];
         $fields = [];
+        $roleOwners = [];
 
         foreach ((array) $source as $name => $definition) {
             if (! is_string($name) || is_array($definition) && ! is_string($definition['path'] ?? null)) {
@@ -195,6 +311,10 @@ final class LiveReadQueryPlanner
             $metadata = is_array($definition) ? $definition : [];
             $path = is_string($definition) ? $definition : (string) $definition['path'];
             $type = $this->type($metadata['type'] ?? $metadata['data_type'] ?? null, $name);
+            $role = PriceSemanticRole::normalize($metadata['semantic_role'] ?? $metadata['semantic_type'] ?? null, $name);
+            if ($role instanceof PriceSemanticRole && ! $role->supportsType($type)) {
+                $role = null;
+            }
             $fields[$name] = [
                 'path' => $path,
                 'type' => $type,
@@ -204,16 +324,79 @@ final class LiveReadQueryPlanner
                 'searchable' => (bool) ($metadata['searchable'] ?? $type === 'string'),
                 'displayable' => (bool) ($metadata['displayable'] ?? true),
                 'remote_sort' => $metadata['remote_sort'] ?? null,
+                'semantic_role' => $role?->value,
+            ];
+            if ($role instanceof PriceSemanticRole) {
+                $roleOwners[$role->value][] = $name;
+            }
+        }
+
+        foreach ($roleOwners as $role => $owners) {
+            if (count($owners) !== 1 || isset($fields[$role])) {
+                continue;
+            }
+
+            $owner = $owners[0];
+            $fields[$role] = [
+                ...$fields[$owner],
+                'resolved_field' => $owner,
+            ];
+        }
+
+        if (! isset($fields[PriceSemanticRole::CurrentPrice->value])
+            && isset($fields[PriceSemanticRole::RegularPrice->value])) {
+            $fields[PriceSemanticRole::CurrentPrice->value] = [
+                ...$fields[PriceSemanticRole::RegularPrice->value],
+                'semantic_role' => PriceSemanticRole::CurrentPrice->value,
+                'resolved_field' => $roleOwners[PriceSemanticRole::RegularPrice->value][0],
+            ];
+        }
+
+        if (! isset($roleOwners[PriceSemanticRole::DiscountPercent->value])
+            && count($roleOwners[PriceSemanticRole::CurrentPrice->value] ?? []) === 1
+            && count($roleOwners[PriceSemanticRole::RegularPrice->value] ?? []) === 1) {
+            $fields[PriceSemanticRole::DiscountPercent->value] = [
+                'path' => null,
+                'type' => 'decimal',
+                'queryable' => true,
+                'filterable' => true,
+                'sortable' => true,
+                'searchable' => false,
+                'displayable' => true,
+                'remote_sort' => null,
+                'semantic_role' => PriceSemanticRole::DiscountPercent->value,
+                'derived_from' => [
+                    'current_price' => $roleOwners[PriceSemanticRole::CurrentPrice->value][0],
+                    'regular_price' => $roleOwners[PriceSemanticRole::RegularPrice->value][0],
+                ],
             ];
         }
 
         return $fields;
     }
 
+    /**
+     * @param  array<string, mixed>  $request
+     * @return array<string, mixed>
+     */
+    private function effectiveFieldRequest(array $request, string $resolvedField): array
+    {
+        $request['field'] = $resolvedField;
+
+        return $request;
+    }
+
+    private function requestedSemanticRole(string $field): ?PriceSemanticRole
+    {
+        return PriceSemanticRole::tryFrom(strtolower(trim($field)));
+    }
+
     private function type(mixed $type, string $name): string
     {
-        if (is_string($type) && in_array($type, ['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'], true)) {
-            return $type;
+        $normalizedType = is_string($type) ? strtolower(trim($type)) : '';
+
+        if (in_array($normalizedType, ['string', 'integer', 'decimal', 'number', 'boolean', 'date', 'datetime'], true)) {
+            return $normalizedType === 'number' ? 'decimal' : $normalizedType;
         }
 
         return in_array(strtolower($name), ['id', 'count', 'quantity'], true) ? 'integer' : 'string';
@@ -296,6 +479,66 @@ final class LiveReadQueryPlanner
         }
 
         return data_get($mappings, "{$type}.{$operator}") ?? data_get($mappings, $type);
+    }
+
+    /** @return array{strategy: string, values: array<string, mixed>}|null */
+    private function remoteFilter(mixed $definition, string $operator, mixed $value): ?array
+    {
+        if (is_string($definition) && $definition !== '') {
+            return ['strategy' => 'single_parameter', 'values' => [$definition => $value]];
+        }
+
+        if (! is_array($definition)) {
+            return null;
+        }
+
+        $strategy = (string) ($definition['strategy'] ?? 'single_parameter');
+        $parameter = $definition['remote_parameter'] ?? $definition['parameter'] ?? $definition['remote'] ?? null;
+
+        if ($strategy === 'single_parameter' && is_string($parameter) && $parameter !== '') {
+            return ['strategy' => $strategy, 'values' => [$parameter => $value]];
+        }
+
+        if ($strategy !== 'range_parameters') {
+            return null;
+        }
+
+        $from = $definition['remote_from_parameter'] ?? $definition['from_parameter'] ?? null;
+        $to = $definition['remote_to_parameter'] ?? $definition['to_parameter'] ?? null;
+        $values = [];
+
+        if ($operator === 'eq') {
+            if (is_string($from) && $from !== '') {
+                $values[$from] = $value;
+            }
+            if (is_string($to) && $to !== '') {
+                $values[$to] = $value;
+            }
+        } elseif (in_array($operator, ['gt', 'gte'], true) && is_string($from) && $from !== '') {
+            $values[$from] = $value;
+        } elseif (in_array($operator, ['lt', 'lte'], true) && is_string($to) && $to !== '') {
+            $values[$to] = $value;
+        } elseif ($operator === 'between' && is_array($value) && count($value) === 2) {
+            if (is_string($from) && $from !== '') {
+                $values[$from] = $value[0];
+            }
+            if (is_string($to) && $to !== '') {
+                $values[$to] = $value[1];
+            }
+        }
+
+        return $values === [] ? null : ['strategy' => $strategy, 'values' => $values];
+    }
+
+    private function hasRemoteSort(mixed $remote): bool
+    {
+        if (is_string($remote)) {
+            return $remote !== '';
+        }
+
+        return is_array($remote)
+            && is_string($remote['parameter'] ?? null)
+            && $remote['parameter'] !== '';
     }
 
     /** @return array{strategy: string, values: array<string, mixed>}|null */

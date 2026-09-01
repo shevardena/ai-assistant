@@ -27,6 +27,10 @@ final class LogContextSanitizer
         }
 
         if (is_string($value)) {
+            if (preg_match('/\Adata:image\/[a-z0-9.+-]+;base64,/i', $value) === 1) {
+                return '[IMAGE_DATA_REDACTED]';
+            }
+
             return Str::limit($value, 2000);
         }
 

@@ -39,12 +39,12 @@ class RecommendProductsTool implements BotTool
             'properties' => [
                 'query' => ['type' => 'string'],
                 'limit' => [
-                    'type' => 'integer',
+                    'type' => ['integer', 'null'],
                     'minimum' => 1,
                     'maximum' => 10,
                 ],
             ],
-            'required' => ['query'],
+            'required' => ['query', 'limit'],
             'additionalProperties' => false,
         ];
     }
@@ -179,7 +179,7 @@ class RecommendProductsTool implements BotTool
      */
     private function limit(array $arguments): ?int
     {
-        if (! array_key_exists('limit', $arguments)) {
+        if (! array_key_exists('limit', $arguments) || $arguments['limit'] === null) {
             return min(max(1, (int) config('openai.max_results', 10)), 10);
         }
 

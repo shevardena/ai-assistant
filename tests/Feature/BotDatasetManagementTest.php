@@ -84,7 +84,7 @@ test('existing pivot metadata is preserved and duplicate IDs create one attachme
 
     expect($bot->botDatasets()->count())->toBe(2)
         ->and($existing->priority)->toBe(9)
-        ->and($existing->is_enabled)->toBeFalse()
+        ->and($existing->is_enabled)->toBeTrue()
         ->and($existing->settings)->toBe(['display' => 'compact']);
 });
 
@@ -149,4 +149,22 @@ test('bot show payload contains only current-team datasets and their attachment 
                 && ! $datasets->pluck('id')->contains($otherDataset->id)
                 && $datasets->firstWhere('id', $firstDataset->id)['attached'] === true),
         );
+});
+
+test('bot show payload marks a disabled dataset as unchecked', function () {
+    [$user, $team, $bot, $firstDataset] = botDatasetFixture();
+    BotDataset::factory()->create([
+        'bot_id' => $bot->id,
+        'dataset_id' => $firstDataset->id,
+        'is_enabled' => false,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('bots.show', [
+            'current_team' => $team->slug,
+            'bot' => $bot,
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('bot.datasets', fn (Collection $datasets): bool => $datasets->firstWhere('id', $firstDataset->id)['attached'] === false,
+            ));
 });

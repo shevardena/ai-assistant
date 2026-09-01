@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\ApiOperationSyncFrequency;
 use App\Enums\ApiOperationSyncStrategy;
+use App\Enums\PriceSemanticRole;
 use App\Http\Requests\RunApiOperationSyncRequest;
 use App\Http\Requests\StoreApiOperationRequest;
 use App\Http\Requests\TestApiOperationRequest;
@@ -99,15 +100,18 @@ class ApiOperationController extends Controller
                     'body_parameters' => $this->operationParameterRows($apiOperation, 'body'),
                     'response_fields' => collect(data_get($apiOperation->response_mapping, 'output', []))->map(function (mixed $field, string $name): array {
                         $field = is_array($field) ? $field : ['path' => (string) $field];
+                        $type = $this->responseFieldType($field['type'] ?? $field['data_type'] ?? null);
+                        $semanticRole = PriceSemanticRole::normalize($field['semantic_role'] ?? $field['semantic_type'] ?? null, $name);
 
                         return [
                             'name' => $name,
                             'path' => (string) ($field['path'] ?? ''),
                             'required' => (bool) ($field['required'] ?? false),
-                            'type' => (string) ($field['type'] ?? 'string'),
-                            'searchable' => (bool) ($field['searchable'] ?? (($field['type'] ?? 'string') === 'string')),
+                            'type' => $type,
+                            'semantic_role' => $semanticRole?->value,
+                            'searchable' => (bool) ($field['searchable'] ?? ($type === 'string')),
                             'filterable' => (bool) ($field['filterable'] ?? true),
-                            'sortable' => (bool) ($field['sortable'] ?? in_array($field['type'] ?? 'string', ['string', 'integer', 'decimal', 'date', 'datetime'], true)),
+                            'sortable' => (bool) ($field['sortable'] ?? in_array($type, ['string', 'integer', 'decimal', 'date', 'datetime'], true)),
                             'displayable' => (bool) ($field['displayable'] ?? true),
                         ];
                     })->values()->all(),
@@ -546,5 +550,15 @@ class ApiOperationController extends Controller
         unset($config['api_key'], $config['bearer_token'], $config['token'], $config['secret'], $config['password'], $config['authorization']);
 
         return $config;
+    }
+
+    private function responseFieldType(mixed $type): string
+    {
+        $normalized = strtolower(trim((string) $type));
+        $normalized = $normalized === 'number' ? 'decimal' : $normalized;
+
+        return in_array($normalized, ['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'], true)
+            ? $normalized
+            : 'string';
     }
 }

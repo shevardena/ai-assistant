@@ -94,7 +94,7 @@ test('records only final conservative knowledge failure outcomes', function () {
     ]));
     $success = $service->recordFromResponse($bot, $conversation, $message, knowledgeGapResponse([
         ['tool' => 'search_catalog', 'outcome' => 'no_results'],
-        ['tool' => 'search_catalog', 'outcome' => 'knowledge_success'],
+        ['tool' => 'search_catalog', 'outcome' => 'catalog_success'],
     ]));
     [$otherConversation, $otherMessage] = knowledgeGapTurn($bot, 'Can you ship this tomorrow?');
     $irrelevantFailure = $service->recordFromResponse(

@@ -35,6 +35,8 @@ class BotDatasetController extends Controller
 
             foreach ($datasetIds as $datasetId) {
                 if ($existingAttachments->has($datasetId)) {
+                    $existingAttachments->get($datasetId)->update(['is_enabled' => true]);
+
                     continue;
                 }
 

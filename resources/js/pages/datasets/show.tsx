@@ -16,7 +16,7 @@ import {
 } from '@/lib/status';
 import { edit, index } from '@/routes/datasets';
 import { index as recordsIndex } from '@/routes/datasets/records';
-import type { Dataset, DatasetSourceRun } from '@/types';
+import type { Dataset, DatasetImportError, DatasetSourceRun } from '@/types';
 
 type Props = {
     dataset: Dataset;
@@ -32,11 +32,19 @@ function formatDate(value: string | null): string {
 }
 
 function runStatusVariant(status: DatasetSourceRun['status']) {
-    return status === 'completed'
+    return status === 'completed' || status === 'partial'
         ? 'default'
-        : status === 'failed'
+        : status === 'failed' || status === 'validation_failed'
           ? 'destructive'
           : 'secondary';
+}
+
+function importErrorValue(value: DatasetImportError['raw_value']): string {
+    return value === null ? '—' : String(value);
+}
+
+function importErrorField(error: DatasetImportError): string {
+    return error.source_field ?? error.mapped_key ?? error.field;
 }
 
 export default function DatasetsShow({ dataset }: Props) {
@@ -253,6 +261,87 @@ export default function DatasetsShow({ dataset }: Props) {
                                                 <p className="mt-1 text-sm text-destructive">
                                                     {sourceRun.error}
                                                 </p>
+                                            ) : null}
+                                            {sourceRun.errorSummary &&
+                                            sourceRun.errorSummary.samples.length > 0 ? (
+                                                <details className="mt-3 rounded-lg border bg-muted/20 p-3 text-sm">
+                                                    <summary className="cursor-pointer font-medium">
+                                                        View errors ({sourceRun.errorSummary.totalErrors})
+                                                    </summary>
+                                                    <div className="mt-3 grid gap-3">
+                                                        {Object.entries(
+                                                            sourceRun.errorSummary.errorTypes,
+                                                        ).length === 1 ? (
+                                                            <p className="text-muted-foreground">
+                                                                {sourceRun.rowsFailed} row
+                                                                {sourceRun.rowsFailed === 1
+                                                                    ? ''
+                                                                    : 's'}{' '}
+                                                                failed because{' '}
+                                                                <code className="rounded bg-muted px-1 py-0.5">
+                                                                    {importErrorField(
+                                                                        sourceRun.errorSummary.samples[0],
+                                                                    )}
+                                                                </code>{' '}
+                                                                {sourceRun.errorSummary.samples[0].message}{' '}
+                                                                (received{' '}
+                                                                <code className="rounded bg-muted px-1 py-0.5">
+                                                                    {importErrorValue(
+                                                                        sourceRun.errorSummary.samples[0].raw_value,
+                                                                    )}
+                                                                </code>
+                                                                ) · code{' '}
+                                                                <code className="rounded bg-muted px-1 py-0.5">
+                                                                    {Object.keys(
+                                                                        sourceRun.errorSummary.errorTypes,
+                                                                    )[0]}
+                                                                </code>
+                                                                .
+                                                            </p>
+                                                        ) : null}
+                                                        <div className="overflow-x-auto rounded-md border">
+                                                            <table className="w-full text-left text-xs">
+                                                                <thead className="border-b bg-muted/30">
+                                                                    <tr>
+                                                                        <th className="px-3 py-2 font-medium">Row</th>
+                                                                        <th className="px-3 py-2 font-medium">Field</th>
+                                                                        <th className="px-3 py-2 font-medium">Value</th>
+                                                                        <th className="px-3 py-2 font-medium">Reason</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y">
+                                                                    {sourceRun.errorSummary.samples.map(
+                                                                        (error, errorIndex) => (
+                                                                            <tr key={`${error.row}-${errorIndex}`}>
+                                                                                <td className="whitespace-nowrap px-3 py-2 align-top">
+                                                                                    {error.row}
+                                                                                </td>
+                                                                                <td className="min-w-40 px-3 py-2 align-top">
+                                                                                    <p>{importErrorField(error)}</p>
+                                                                                    {error.mapped_key &&
+                                                                                    error.source_field ? (
+                                                                                        <p className="text-muted-foreground">
+                                                                                            → {error.mapped_key}
+                                                                                        </p>
+                                                                                    ) : null}
+                                                                                </td>
+                                                                                <td className="max-w-56 break-words px-3 py-2 align-top">
+                                                                                    {importErrorValue(error.raw_value)}
+                                                                                </td>
+                                                                                <td className="min-w-64 px-3 py-2 align-top">
+                                                                                    <p>{error.message}</p>
+                                                                                    <p className="text-muted-foreground">
+                                                                                        {error.stage} · {error.error_code}
+                                                                                    </p>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ),
+                                                                    )}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                </details>
                                             ) : null}
                                         </div>
                                     </div>

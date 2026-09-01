@@ -14,6 +14,9 @@ final readonly class LiveReadQueryPlan
      * @param  list<array<string, mixed>>  $remoteConstraints
      * @param  list<array<string, mixed>>  $localConstraints
      * @param  list<array<string, mixed>>  $unsupportedConstraints
+     * @param  list<array<string, mixed>>  $remoteFilters
+     * @param  list<array<string, mixed>>  $unsupportedFilters
+     * @param  list<array<string, mixed>>  $unsupportedSorts
      */
     public function __construct(
         public ?string $localSearchText,
@@ -33,5 +36,10 @@ final readonly class LiveReadQueryPlan
         public array $remoteConstraints = [],
         public array $localConstraints = [],
         public array $unsupportedConstraints = [],
+        public array $remoteFilters = [],
+        public array $unsupportedFilters = [],
+        public array $unsupportedSorts = [],
+        public string $sortMode = 'none',
+        public bool $globalSortGuaranteed = true,
     ) {}
 }

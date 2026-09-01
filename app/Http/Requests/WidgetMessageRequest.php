@@ -20,7 +20,22 @@ class WidgetMessageRequest extends FormRequest
         return [
             'visitor_id' => ['required', 'uuid'],
             'conversation_id' => ['required', 'uuid'],
-            'message' => ['required', 'string', 'max:'.(int) config('widget.message_max_length', 4000)],
+            'client_message_id' => ['nullable', 'uuid'],
+            'message' => [
+                'nullable',
+                'string',
+                'max:'.(int) config('widget.message_max_length', 4000),
+                'required_without:image',
+            ],
+            'image' => [
+                'nullable',
+                'file',
+                'image',
+                'mimetypes:image/jpeg,image/png,image/webp',
+                'mimes:jpg,jpeg,png,webp',
+                'max:'.(int) config('widget.image_max_size_kb', 10240),
+                'required_without:message',
+            ],
         ];
     }
 }

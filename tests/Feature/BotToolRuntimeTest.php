@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\Ai\AiSearchOrchestrator;
 use App\Services\Ai\AiToolSchemaBuilder;
 use App\Services\Ai\BotToolRegistry;
+use App\Services\Ai\CatalogSearchSourceResolver;
 use App\Services\Ai\Contracts\AiClient;
 use App\Services\Ai\Tools\SearchCatalogTool;
 use App\Services\Ai\Tools\ToolExecutionContext;
@@ -41,6 +42,46 @@ function botToolRegistryContext(bool $attachDataset = true): array
     }
 
     return [$user, $team, $bot];
+}
+
+function attachLiveCatalogSearch(Bot $bot, Team $team): ApiOperation
+{
+    $source = DataSource::factory()->ready()->create([
+        'team_id' => $team->id,
+        'type' => 'rest_api',
+        'config' => ['base_url' => 'https://api.example.test'],
+    ]);
+    $operation = ApiOperation::factory()->create([
+        'data_source_id' => $source->id,
+        'execution_mode' => ApiOperationMode::Read->value,
+        'method' => 'GET',
+        'path' => '/products',
+        'request_schema' => ['type' => 'object', 'properties' => [], 'required' => []],
+        'request_mapping' => [
+            'query' => [],
+            'fixed' => ['query' => ['per_page' => 300]],
+            'live_query' => ['search_text' => 'name'],
+        ],
+        'response_mapping' => [
+            'collection' => [
+                'path' => 'data',
+                'fields' => [
+                    'id' => ['path' => 'id', 'type' => 'integer', 'required' => true],
+                    'title' => ['path' => 'name', 'type' => 'string', 'required' => true, 'searchable' => true],
+                    'external_id' => ['path' => 'external_id', 'type' => 'string', 'required' => false],
+                ],
+            ],
+            'pagination' => ['type' => 'none'],
+        ],
+    ]);
+    BotApiOperation::factory()->create([
+        'bot_id' => $bot->id,
+        'api_operation_id' => $operation->id,
+        'tool_name' => 'search_catalog',
+        'is_enabled' => true,
+    ]);
+
+    return $operation;
 }
 
 test('the registry resolves the dataset-backed tools for an eligible bot', function () {
@@ -377,39 +418,7 @@ test('search_catalog federates eligible product datasets and live API sources', 
         'searchable_text' => 'Indexed CAMRY part',
     ]);
 
-    $source = DataSource::factory()->ready()->create([
-        'team_id' => $team->id,
-        'type' => 'rest_api',
-        'config' => ['base_url' => 'https://api.example.test'],
-    ]);
-    $operation = ApiOperation::factory()->create([
-        'data_source_id' => $source->id,
-        'execution_mode' => ApiOperationMode::Read->value,
-        'method' => 'GET',
-        'path' => '/products',
-        'request_schema' => ['type' => 'object', 'properties' => [], 'required' => []],
-        'request_mapping' => [
-            'query' => [],
-            'fixed' => ['query' => ['per_page' => 300]],
-            'live_query' => ['search_text' => 'name'],
-        ],
-        'response_mapping' => [
-            'collection' => [
-                'path' => 'data',
-                'fields' => [
-                    'id' => ['path' => 'id', 'type' => 'integer', 'required' => true],
-                    'title' => ['path' => 'name', 'type' => 'string', 'required' => true, 'searchable' => true],
-                ],
-            ],
-            'pagination' => ['type' => 'none'],
-        ],
-    ]);
-    BotApiOperation::factory()->create([
-        'bot_id' => $bot->id,
-        'api_operation_id' => $operation->id,
-        'tool_name' => 'search_catalog',
-        'is_enabled' => true,
-    ]);
+    $liveOperation = attachLiveCatalogSearch($bot, $team);
 
     Http::preventStrayRequests();
     Http::fake([
@@ -420,13 +429,300 @@ test('search_catalog federates eligible product datasets and live API sources', 
 
     $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
         $bot,
-        ['dataset' => null, 'text' => 'camry', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ['dataset' => $dataset->slug, 'text' => 'camry', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
         ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
     );
 
     expect($result->data['search']['count'])->toBe(2)
+        ->and($result->data['search']['outcome'])->toBe('catalog_success')
         ->and($result->metadata['source_results'])->toHaveCount(2)
-        ->and($result->metadata['source_errors'])->toBe([]);
+        ->and($result->metadata['source_errors'])->toBe([])
+        ->and($result->data['search']['sources'])->toContain([
+            'type' => 'dataset',
+            'id' => $dataset->id,
+            'name' => $dataset->name,
+            'slug' => $dataset->slug,
+            'mode' => 'indexed',
+            'count' => 1,
+        ])
+        ->and($result->data['search']['sources'])->toContain([
+            'type' => 'api_operation',
+            'id' => $liveOperation->id,
+            'name' => 'Find products',
+            'slug' => null,
+            'mode' => 'live',
+            'count' => 1,
+        ]);
+});
+
+test('search_catalog restricts to a named dataset only for explicit source scope', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    $dataset = $bot->datasets()->firstOrFail();
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'key' => 'name',
+        'label' => 'Name',
+        'data_type' => 'string',
+        'is_searchable' => true,
+        'is_displayable' => true,
+    ]);
+    DatasetRecord::factory()->create([
+        'dataset_id' => $dataset->id,
+        'external_id' => '35',
+        'payload' => ['name' => 'Indexed CAMRY part'],
+        'searchable_text' => 'Indexed CAMRY part',
+    ]);
+    attachLiveCatalogSearch($bot, $team);
+
+    Http::preventStrayRequests();
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        [
+            'dataset' => $dataset->slug,
+            'source_scope' => 'specific',
+            'text' => 'camry',
+            'filters' => [],
+            'sorts' => [],
+            'limit' => 10,
+            'result_count' => null,
+        ],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    Http::assertNothingSent();
+
+    expect($result->data['search']['count'])->toBe(1)
+        ->and($result->data['search']['sources'])->toHaveCount(1)
+        ->and($result->data['search']['sources'][0])->toMatchArray([
+            'type' => 'dataset',
+            'slug' => $dataset->slug,
+            'mode' => 'indexed',
+            'count' => 1,
+        ]);
+});
+
+test('search_catalog finds an exact identifier in an indexed dataset without a live operation', function () {
+    [, , $bot] = botToolRegistryContext();
+    $dataset = $bot->datasets()->firstOrFail();
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'key' => 'group',
+        'is_searchable' => true,
+        'is_displayable' => true,
+    ]);
+    DatasetRecord::factory()->create([
+        'dataset_id' => $dataset->id,
+        'external_id' => 'BHCB66641BBHS',
+        'payload' => ['group' => 'BHCB66641BBHS'],
+        'searchable_text' => 'BHCB66641BBHS',
+    ]);
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        ['dataset' => null, 'text' => 'BHCB66641BBHS', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    expect($result->data['search']['count'])->toBe(1)
+        ->and($result->data['search']['items'][0]['product_reference'])->toBe('BHCB66641BBHS');
+});
+
+test('search_catalog preserves indexed results when the live source is empty', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    $dataset = $bot->datasets()->firstOrFail();
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'key' => 'group',
+        'is_searchable' => true,
+        'is_displayable' => true,
+    ]);
+    DatasetRecord::factory()->create([
+        'dataset_id' => $dataset->id,
+        'external_id' => 'BHCB66641BBHS',
+        'payload' => ['group' => 'BHCB66641BBHS', 'price' => 949],
+        'searchable_text' => 'BHCB66641BBHS 949',
+    ]);
+    attachLiveCatalogSearch($bot, $team);
+
+    Http::preventStrayRequests();
+    Http::fake(['https://api.example.test/*' => Http::response(['data' => []])]);
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        ['dataset' => null, 'text' => 'BHCB66641BBHS', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    expect($result->data['search']['count'])->toBe(1)
+        ->and($result->data['search']['outcome'])->toBe('catalog_success')
+        ->and($result->data['search']['items'][0])->toMatchArray([
+            'external_id' => 'BHCB66641BBHS',
+            'product_reference' => 'BHCB66641BBHS',
+            'group' => 'BHCB66641BBHS',
+        ])
+        ->and($result->metadata['source_results'])->toContain([
+            'type' => 'dataset',
+            'count' => 1,
+        ])
+        ->and($result->metadata['source_results'])->toContain([
+            'type' => 'api_operation',
+            'count' => 0,
+        ]);
+});
+
+test('search_catalog returns successful sources with partial failure provenance', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    $dataset = $bot->datasets()->firstOrFail();
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'key' => 'name',
+        'label' => 'Name',
+        'data_type' => 'string',
+        'is_searchable' => true,
+        'is_displayable' => true,
+    ]);
+    DatasetRecord::factory()->create([
+        'dataset_id' => $dataset->id,
+        'external_id' => 'camry-35',
+        'payload' => ['name' => 'Indexed CAMRY part'],
+        'searchable_text' => 'Indexed CAMRY part',
+    ]);
+    $liveOperation = attachLiveCatalogSearch($bot, $team);
+
+    Http::preventStrayRequests();
+    Http::fake(['https://api.example.test/*' => Http::response(['error' => 'upstream failure'], 503)]);
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        ['dataset' => null, 'text' => 'camry', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    expect($result->data['ok'])->toBeTrue()
+        ->and($result->data['search']['outcome'])->toBe('partial_success')
+        ->and($result->data['search']['count'])->toBe(1)
+        ->and($result->data['search']['sources'])->toContain([
+            'type' => 'dataset',
+            'slug' => $dataset->slug,
+            'mode' => 'indexed',
+            'count' => 1,
+        ])
+        ->and($result->data['search']['sources'])->toContain([
+            'type' => 'api_operation',
+            'id' => $liveOperation->id,
+            'mode' => 'live',
+            'count' => null,
+        ])
+        ->and($result->metadata['source_errors'])->toHaveCount(1);
+});
+
+test('search_catalog keeps a partial no-results aggregate successful when a source fails', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    attachLiveCatalogSearch($bot, $team);
+
+    Http::preventStrayRequests();
+    Http::fake(['https://api.example.test/*' => Http::response(['error' => 'upstream failure'], 503)]);
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        ['dataset' => null, 'text' => 'does-not-exist', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    expect($result->data)->toMatchArray([
+        'ok' => true,
+        'search' => [
+            'count' => 0,
+            'outcome' => 'partial_success',
+        ],
+    ])
+        ->and($result->metadata['source_errors'])->toHaveCount(1);
+});
+
+test('search_catalog fails only when every eligible source fails', function () {
+    [, $team, $bot] = botToolRegistryContext(attachDataset: false);
+    attachLiveCatalogSearch($bot, $team);
+    attachLiveCatalogSearch($bot, $team);
+
+    Http::preventStrayRequests();
+    Http::fake(['https://api.example.test/*' => Http::response(['error' => 'upstream failure'], 503)]);
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        ['dataset' => null, 'text' => 'camry', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    expect($result->data)->toMatchArray([
+        'ok' => false,
+        'error' => 'search_unavailable',
+    ])
+        ->and($result->metadata['source_errors'])->toHaveCount(2);
+});
+
+test('search_catalog deduplicates an indexed and live record with the same external identifier', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    $dataset = $bot->datasets()->firstOrFail();
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'key' => 'name',
+        'is_searchable' => true,
+        'is_displayable' => true,
+    ]);
+    DatasetRecord::factory()->create([
+        'dataset_id' => $dataset->id,
+        'external_id' => 'camry-35',
+        'payload' => ['name' => 'Indexed CAMRY part'],
+        'searchable_text' => 'Indexed CAMRY part',
+    ]);
+    attachLiveCatalogSearch($bot, $team);
+
+    Http::preventStrayRequests();
+    Http::fake(['https://api.example.test/*' => Http::response([
+        'data' => [['id' => 35, 'external_id' => 'camry-35', 'name' => 'Live CAMRY part']],
+    ])]);
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        ['dataset' => null, 'text' => 'camry', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    expect($result->data['search']['count'])->toBe(1)
+        ->and($result->metadata['source_results'])->toHaveCount(2);
+});
+
+test('catalog source resolution reports rejected datasets explicitly', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    $disabled = Dataset::factory()->ready()->create(['team_id' => $team->id, 'slug' => 'disabled-products']);
+    BotDataset::factory()->create([
+        'bot_id' => $bot->id,
+        'dataset_id' => $disabled->id,
+        'is_enabled' => false,
+    ]);
+    $preparing = Dataset::factory()->create(['team_id' => $team->id, 'slug' => 'preparing-products']);
+    BotDataset::factory()->create([
+        'bot_id' => $bot->id,
+        'dataset_id' => $preparing->id,
+        'is_enabled' => true,
+    ]);
+
+    $resolution = app(CatalogSearchSourceResolver::class)->resolve($bot);
+
+    expect($resolution['rejected'])->toContain([
+        'type' => 'dataset',
+        'id' => $disabled->id,
+        'name' => $disabled->name,
+        'slug' => 'disabled-products',
+        'reason' => 'disabled_pivot',
+    ])->toContain([
+        'type' => 'dataset',
+        'id' => $preparing->id,
+        'name' => $preparing->name,
+        'slug' => 'preparing-products',
+        'reason' => 'dataset_not_ready',
+    ]);
 });
 
 test('the registered tool produces a strict schema without internal implementation details', function () {

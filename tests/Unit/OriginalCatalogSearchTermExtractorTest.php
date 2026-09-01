@@ -17,6 +17,13 @@ test('does not turn a generic product request into a search term', function () {
     expect(app(OriginalCatalogSearchTermExtractor::class)->extract('მაჩვენე პროდუქტები'))->toBeNull();
 });
 
+test('removes conversational filler and structured numeric criteria from fallback terms', function () {
+    $extractor = app(OriginalCatalogSearchTermExtractor::class);
+
+    expect($extractor->extract('du u have any camry products under 150?'))->toBe('camry')
+        ->and($extractor->extract('150 ლარამდე ქემრი რა გაქვს'))->toBe('ქემრი');
+});
+
 test('preserves literal title structure while removing conversational suffixes', function () {
     $extractor = app(OriginalCatalogSearchTermExtractor::class);
 

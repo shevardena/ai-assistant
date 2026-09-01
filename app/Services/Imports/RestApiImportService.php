@@ -285,7 +285,7 @@ class RestApiImportService
                     throw new ImportException('The API record limit was exceeded.');
                 }
 
-                $externalId = $this->recordMapper->externalId($dataset, $row);
+                $externalId = $this->recordMapper->externalId($dataset, $row, $fields);
 
                 if ($externalId !== null) {
                     if (array_key_exists($externalId, $seenExternalIds)) {
@@ -568,6 +568,10 @@ class RestApiImportService
 
         if ($dataset->primary_key_path === null || $dataset->primary_key_path === '') {
             throw new ImportException('Configure the dataset primary key path before importing.');
+        }
+
+        if ($fields->isNotEmpty()) {
+            $this->recordMapper->validatePrimaryKeyMapping($dataset, $fields);
         }
 
         $syncMode = Arr::get($this->mapping($operation, 'response_mapping'), 'sync_mode');

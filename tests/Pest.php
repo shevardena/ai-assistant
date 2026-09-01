@@ -24,6 +24,9 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/AssemblyAiSpeechToTextProviderTest.php');
 
+pest()->extend(TestCase::class)
+    ->in('Unit/WidgetMessageRequestTest.php', 'Unit/WidgetImageAttachmentServiceTest.php');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
@@ -53,4 +56,35 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Assert the OpenAI strict-function object invariants recursively.
+ *
+ * @param  array<string, mixed>  $schema
+ */
+function assertStrictAiObjectSchema(array $schema, string $path = 'schema'): void
+{
+    $schemaType = $schema['type'] ?? null;
+    $isObject = $schemaType === 'object'
+        || (is_array($schemaType) && in_array('object', $schemaType, true));
+
+    if ($isObject && array_key_exists('properties', $schema)) {
+        if (($schema['additionalProperties'] ?? null) !== false) {
+            throw new RuntimeException("{$path} must set additionalProperties=false.");
+        }
+
+        $properties = is_array($schema['properties']) ? array_keys($schema['properties']) : [];
+        $required = is_array($schema['required'] ?? null) ? $schema['required'] : [];
+
+        if (array_diff($properties, $required) !== [] || array_diff($required, $properties) !== []) {
+            throw new RuntimeException("{$path} must require every declared property.");
+        }
+    }
+
+    foreach ($schema as $key => $value) {
+        if (is_array($value)) {
+            assertStrictAiObjectSchema($value, "{$path}.{$key}");
+        }
+    }
 }

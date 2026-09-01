@@ -68,3 +68,32 @@ test('persists semantic constraint mappings without renaming client parameters',
         ],
     ]);
 });
+
+test('preserves legacy numeric response field metadata when rebuilding mappings', function () {
+    $values = app(ApiConnectionBuilderService::class)->operationValues([
+        'usage' => 'live_read',
+        'method' => 'GET',
+        'path' => '/products',
+        'response_fields' => [
+            ['name' => 'price', 'path' => 'price', 'data_type' => 'number'],
+        ],
+    ]);
+
+    expect($values['response_mapping']['output']['price']['type'])->toBe('decimal');
+});
+
+test('persists semantic price roles with live response field metadata', function () {
+    $values = app(ApiConnectionBuilderService::class)->operationValues([
+        'usage' => 'live_read',
+        'method' => 'GET',
+        'path' => '/products',
+        'response_fields' => [
+            ['name' => 'promo_price', 'path' => 'promo_price', 'type' => 'decimal', 'semantic_role' => 'current_price'],
+        ],
+    ]);
+
+    expect($values['response_mapping']['output']['promo_price'])->toMatchArray([
+        'type' => 'decimal',
+        'semantic_role' => 'current_price',
+    ]);
+});

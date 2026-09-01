@@ -30,12 +30,14 @@ final readonly class ChannelInboundMessage
         string $externalUserId,
         string $text,
         array $metadata = [],
+        array $attachments = [],
     ): self {
         return new self(
             channel: ConversationChannel::Website,
             externalConversationId: $externalConversationId,
             externalUserId: $externalUserId,
             text: $text,
+            attachments: $attachments,
             metadata: $metadata,
         );
     }

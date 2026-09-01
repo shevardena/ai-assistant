@@ -38,6 +38,16 @@ const fieldTypes: DatasetFieldDataType[] = [
     'url',
 ];
 
+const priceSemanticRoles = ['current_price', 'regular_price', 'discount_percent'] as const;
+
+function compatiblePriceRoles(dataType: DatasetFieldDataType): string[] {
+    return dataType === 'decimal'
+        ? [...priceSemanticRoles]
+        : dataType === 'integer'
+            ? ['discount_percent']
+            : [];
+}
+
 function configValue(field?: DatasetField): string {
     return JSON.stringify(field?.config ?? {}, null, 2);
 }
@@ -167,6 +177,26 @@ export default function DatasetFieldForm({
                                 placeholder="price"
                             />
                             <InputError message={errors.semantic_type} />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="price_semantic_role">Price semantic role</Label>
+                            <Select
+                                value={compatiblePriceRoles(dataType).includes(field?.semanticType ?? '') ? field?.semanticType ?? 'none' : 'none'}
+                                onValueChange={(value) => {
+                                    const input = document.getElementById('semantic_type') as HTMLInputElement | null;
+
+                                    if (input) {
+                                        input.value = value === 'none' ? '' : value;
+                                    }
+                                }}
+                            >
+                                <SelectTrigger id="price_semantic_role" className="w-full"><SelectValue placeholder="None" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {compatiblePriceRoles(dataType).map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Available only for numeric fields.</p>
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="normalizer">Normalizer</Label>

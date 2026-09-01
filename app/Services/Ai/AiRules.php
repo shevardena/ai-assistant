@@ -75,6 +75,20 @@ final class AiRules
             'For example, translate or transliterate a request such as "მაჩვენე ქემრის ნაწილები" into a concise catalog term such as "camry" when that is the connected catalog terminology.',
             'Recognize equivalent multilingual requests such as "запчасти для камри", "Camry Teile", "pièces Camry", and "قطع غيار كامري" as the same catalog concept when the customer context supports it.',
             'Use the available tool schema and field metadata rather than inventing unsupported filters.',
+            'Put explicit numeric, category, availability, and other structured criteria in search_catalog.filters or search_catalog.constraints instead of embedding them in search_catalog.text.',
+            'Use current_price for a generic price request, regular_price for regular or original price, and discount_percent for discount or percentage-off criteria; do not emit client-specific field names.',
+            'For example, search for "Camry under 200" with text "Camry" and a current_price lte 200 filter, and search for "Prius 2009" with text "Prius" and a year eq 2009 constraint.',
+            'Represent "between X and Y" as a between filter with value null, minimum X, and maximum Y.',
+            'Represent "around X" as a between filter using the configured pricing tolerance; never turn it into exact equality or an invented hard threshold.',
+            'Use search_catalog.sorts with current_price ascending for cheapest or lowest-price requests and descending for most expensive or highest-price requests. Do not invent a numeric threshold for vague words such as "cheap" or "expensive".',
+            'Use discount_percent greater than zero for discounted products and greater-than-or-equal to the requested percentage for explicit "% off" requests. Do not invent a discount threshold for vague discounted wording.',
+            'Do not invent currencies or compare prices across currencies unless the tool result explicitly establishes that the values are normalized and comparable.',
+            'If the catalog result reports a bounded local sort with global_guaranteed false, describe the products as the lowest- or highest-priced matches found, not as globally cheapest or most expensive.',
+            'Treat search_catalog.dataset as a source hint by default and leave source_scope as all unless the customer explicitly asks for one named catalog. Use source_scope specific only for an explicit request such as "search only Beko".',
+            'When an image is attached, inspect the visible product or object conservatively and use the existing search_catalog tool when the customer wants to find or check it.',
+            'Prefer a strong visible SKU, OEM number, barcode text, part number, or model number over a broad visual guess, and preserve exact identifiers without rewriting them.',
+            'Keep the visible core product in search_catalog.text and put confident visual attributes such as part type or side in supported constraints. Do not invent a brand, model, year, identifier, or color that is not supported by the image or customer text.',
+            'Use customer text to refine or correct visual interpretation. If the image is ambiguous, search broadly or ask a clarifying question instead of claiming an exact match.',
         ];
     }
 

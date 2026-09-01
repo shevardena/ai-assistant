@@ -23,3 +23,11 @@ test('truncates serialized payloads at the configured byte limit', function () {
         ->and($result['original_bytes'])->toBeGreaterThan(40)
         ->and(strlen($result['body']))->toBe(40);
 });
+
+test('redacts image data URLs from full prompt logging', function () {
+    $sanitizer = new LogContextSanitizer;
+
+    expect($sanitizer->sanitize([
+        'image_url' => 'data:image/jpeg;base64,ZmFrZS1pbWFnZQ==',
+    ]))->toBe(['image_url' => '[IMAGE_DATA_REDACTED]']);
+});

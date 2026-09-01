@@ -225,7 +225,8 @@ class BotController extends Controller
      */
     private function datasetAssignments(Bot $bot): array
     {
-        $attachedDatasetIds = $bot->botDatasets()
+        $enabledDatasetIds = $bot->botDatasets()
+            ->where('is_enabled', true)
             ->pluck('dataset_id')
             ->map(fn (mixed $datasetId): int => (int) $datasetId)
             ->flip();
@@ -238,7 +239,7 @@ class BotController extends Controller
                 'id' => $dataset->id,
                 'name' => $dataset->name,
                 'slug' => $dataset->slug,
-                'attached' => $attachedDatasetIds->has($dataset->id),
+                'attached' => $enabledDatasetIds->has($dataset->id),
             ])
             ->values()
             ->all();

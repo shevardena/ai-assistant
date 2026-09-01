@@ -127,6 +127,7 @@ function searchCatalogCall(
     string $dataset = 'products',
     string $operator = 'contains',
     string $text = 'laptop',
+    ?string $sourceScope = 'all',
 ): array {
     return [
         'type' => 'function_call',
@@ -134,6 +135,7 @@ function searchCatalogCall(
         'name' => 'search_catalog',
         'arguments' => json_encode([
             'dataset' => $dataset,
+            'source_scope' => $sourceScope,
             'text' => $text,
             'filters' => [[
                 'field' => 'name',
@@ -167,6 +169,8 @@ test('strict tool schema and runtime context expose only bot-authorized logical 
         ->and($tool['parameters']['properties']['limit']['maximum'])->toBe(10)
         ->and($tool['parameters']['properties']['filters']['items']['required'])
         ->toContain('value')
+        ->toContain('minimum')
+        ->toContain('maximum')
         ->and($tool['parameters']['properties']['constraints']['type'])->toBe('array')
         ->and($tool['parameters']['properties']['constraints']['items'])->toMatchArray([
             'type' => 'object',
@@ -209,7 +213,7 @@ test('orchestrator executes a real search and returns compact grounded results',
         ])
         ->and($response->searches[0]['items'][0])->not->toHaveKey('internal_note')
         ->and($response->toolOutcomes)->toBe([
-            ['tool' => 'search_catalog', 'outcome' => 'knowledge_success'],
+            ['tool' => 'search_catalog', 'outcome' => 'catalog_success'],
         ])
         ->and(collect($fake->payloads[1]['input'])->contains(
             fn (array $item): bool => ($item['type'] ?? null) === 'function_call_output',
@@ -337,7 +341,7 @@ test('unauthorized bot dataset calls are rejected without searching another data
         ->and($response->toolCallsCount)->toBe(1)
         ->and($response->searches)->toBe([])
         ->and($response->toolOutcomes)->toBe([
-            ['tool' => 'search_catalog', 'outcome' => 'non_knowledge_failure'],
+            ['tool' => 'search_catalog', 'outcome' => 'failed'],
         ])
         ->and(collect($fake->payloads[1]['input'])->contains(
             fn (array $item): bool => ($item['type'] ?? null) === 'function_call_output'

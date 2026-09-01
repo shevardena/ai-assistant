@@ -15,8 +15,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { create, store, test, update } from '@/routes/data-sources/api-operations';
 import { show as showDataSource } from '@/routes/data-sources';
+import { create, store, test, update } from '@/routes/data-sources/api-operations';
 
 type Props = {
     dataSource: { id: number; name: string; config: Record<string, unknown> };
@@ -63,6 +63,7 @@ type ResponseField = {
     path: string;
     required: boolean;
     type: FieldType;
+    semantic_role: PriceSemanticRole | null;
     searchable: boolean;
     filterable: boolean;
     sortable: boolean;
@@ -70,6 +71,7 @@ type ResponseField = {
 };
 
 type FieldType = 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime';
+type PriceSemanticRole = 'current_price' | 'regular_price' | 'discount_percent';
 
 type LiveFilterMapping = { field: string; operator: string; remote: string };
 type LiveConstraintMapping = {
@@ -106,6 +108,7 @@ const emptyResponseField = (): ResponseField => ({
     path: '',
     required: false,
     type: 'string',
+    semantic_role: null,
     searchable: true,
     filterable: true,
     sortable: true,
@@ -121,6 +124,50 @@ const emptyInputMapping = (): InputMappingRow => ({
 });
 
 const emptyKeyValue = (): KeyValueRow => ({ name: '', value: '' });
+
+const responseFieldType = (definition: unknown): FieldType => {
+    if (!definition || typeof definition !== 'object') {
+        return 'string';
+    }
+
+    const value = 'type' in definition
+        ? definition.type
+        : 'data_type' in definition
+            ? definition.data_type
+            : null;
+    const normalized = String(value ?? '').toLowerCase();
+
+    return normalized === 'number'
+        ? 'decimal'
+        : (['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'].includes(normalized)
+              ? normalized as FieldType
+              : 'string');
+};
+
+const priceRoleOptions = (type: FieldType): PriceSemanticRole[] =>
+    type === 'decimal'
+        ? ['current_price', 'regular_price', 'discount_percent']
+        : type === 'integer'
+            ? ['discount_percent']
+            : [];
+
+const responseFieldRole = (
+    definition: unknown,
+    type: FieldType,
+): PriceSemanticRole | null => {
+    if (!definition || typeof definition !== 'object') {
+        return null;
+    }
+
+    const value = 'semantic_role' in definition
+        ? definition.semantic_role
+        : 'semantic_type' in definition
+            ? definition.semantic_type
+            : null;
+    const normalized = String(value ?? '').toLowerCase() as PriceSemanticRole;
+
+    return priceRoleOptions(type).includes(normalized) ? normalized : null;
+};
 
 export default function ApiOperationCreate({
     dataSource,
@@ -194,7 +241,8 @@ export default function ApiOperationCreate({
                       'required' in definition
                         ? Boolean(definition.required)
                         : true,
-                  type: (definition && typeof definition === 'object' && ['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'].includes(String(definition.type)) ? definition.type : 'string') as FieldType,
+                  type: responseFieldType(definition),
+                  semantic_role: responseFieldRole(definition, responseFieldType(definition)),
                   searchable: definition && typeof definition === 'object' && 'searchable' in definition ? Boolean(definition.searchable) : true,
                   filterable: definition && typeof definition === 'object' && 'filterable' in definition ? Boolean(definition.filterable) : true,
                   sortable: definition && typeof definition === 'object' && 'sortable' in definition ? Boolean(definition.sortable) : true,
@@ -239,14 +287,25 @@ export default function ApiOperationCreate({
     const updateResponseField = (
         index: number,
         key: keyof ResponseField,
-        value: string | boolean,
-    ) =>
+        value: string | boolean | null,
+    ) => {
         form.setData(
             'response_fields',
-            form.data.response_fields.map((field, fieldIndex) =>
-                fieldIndex === index ? { ...field, [key]: value } : field,
-            ),
+            form.data.response_fields.map((field, fieldIndex) => {
+                if (fieldIndex !== index) {
+                    return field;
+                }
+
+                const next = { ...field, [key]: value } as ResponseField;
+
+                if (key === 'type' && !priceRoleOptions(value as FieldType).includes(field.semantic_role ?? 'current_price')) {
+                    next.semantic_role = null;
+                }
+
+                return next;
+            }),
         );
+    };
 
     const updateInputMapping = (
         index: number,
@@ -356,6 +415,7 @@ export default function ApiOperationCreate({
                                                               path: field.path,
                                                               required: field.required,
                                                               type: field.type,
+                                                              semantic_role: field.semantic_role,
                                                               searchable: field.searchable,
                                                               filterable: field.filterable,
                                                               sortable: field.sortable,
@@ -367,13 +427,16 @@ export default function ApiOperationCreate({
                                       }
                                 : { pagination: data.pagination },
                         }));
-                        operation
-                            ? form.put(update.url([
-                                  currentTeamSlug,
-                                  dataSource.id,
-                                  operation.id,
-                              ]))
-                            : form.post(store.url([currentTeamSlug, dataSource.id]));
+
+                        if (operation) {
+                            form.put(update.url([
+                                currentTeamSlug,
+                                dataSource.id,
+                                operation.id,
+                            ]));
+                        } else {
+                            form.post(store.url([currentTeamSlug, dataSource.id]));
+                        }
                     }}
                     className="space-y-6"
                 >
@@ -1063,9 +1126,13 @@ export default function ApiOperationCreate({
                                                             )
                                                         }
                                                     />
-                                                    <Select value={field.type} onValueChange={(value: FieldType) => setCollectionFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, type: value } : item))}>
+                                                    <Select value={field.type} onValueChange={(value: FieldType) => setCollectionFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, type: value, semantic_role: priceRoleOptions(value).includes(item.semantic_role ?? 'current_price') ? item.semantic_role : null } : item))}>
                                                         <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
                                                         <SelectContent>{(['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'] as FieldType[]).map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
+                                                    </Select>
+                                                    <Select value={field.semantic_role ?? 'none'} onValueChange={(value) => setCollectionFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, semantic_role: value === 'none' ? null : value as PriceSemanticRole } : item))}>
+                                                        <SelectTrigger><SelectValue placeholder="Semantic role" /></SelectTrigger>
+                                                        <SelectContent><SelectItem value="none">No price role</SelectItem>{priceRoleOptions(field.type).map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent>
                                                     </Select>
                                                     <div className="flex flex-wrap items-center gap-3 text-xs md:col-span-4">
                                                         {(['searchable', 'filterable', 'sortable', 'displayable'] as const).map((key) => <label key={key} className="flex items-center gap-1"><input type="checkbox" checked={field[key]} onChange={(event) => setCollectionFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.checked } : item))} />{key}</label>)}
@@ -1189,6 +1256,10 @@ export default function ApiOperationCreate({
                                                 <Select value={field.type} onValueChange={(value: FieldType) => updateResponseField(index, 'type', value)}>
                                                     <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
                                                     <SelectContent>{(['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'] as FieldType[]).map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
+                                                </Select>
+                                                <Select value={field.semantic_role ?? 'none'} onValueChange={(value) => updateResponseField(index, 'semantic_role', value === 'none' ? null : value)}>
+                                                    <SelectTrigger><SelectValue placeholder="Semantic role" /></SelectTrigger>
+                                                    <SelectContent><SelectItem value="none">No price role</SelectItem>{priceRoleOptions(field.type).map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent>
                                                 </Select>
                                                 <div className="flex flex-wrap items-center gap-3 text-xs md:col-span-4">
                                                     {(['searchable', 'filterable', 'sortable', 'displayable'] as const).map((key) => <label key={key} className="flex items-center gap-1"><input type="checkbox" checked={field[key]} onChange={(event) => updateResponseField(index, key, event.target.checked)} />{key}</label>)}

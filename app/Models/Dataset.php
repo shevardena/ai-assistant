@@ -52,7 +52,17 @@ class Dataset extends Model
      */
     public function scopeCatalog(Builder $query): Builder
     {
-        return $query->whereIn('entity_type', ['catalog', 'product', 'car', 'hotel', 'property', 'generic']);
+        return $query->whereIn('entity_type', self::catalogEntityTypes());
+    }
+
+    /**
+     * Return entity types that can provide catalog records.
+     *
+     * @return list<string>
+     */
+    public static function catalogEntityTypes(): array
+    {
+        return ['catalog', 'product', 'car', 'hotel', 'property', 'generic'];
     }
 
     /**

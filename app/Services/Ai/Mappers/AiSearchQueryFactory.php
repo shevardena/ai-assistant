@@ -2,14 +2,17 @@
 
 namespace App\Services\Ai\Mappers;
 
+use App\Enums\PriceSemanticRole;
 use App\Models\Bot;
 use App\Models\Dataset;
+use App\Models\DatasetField;
 use App\Services\Ai\AiException;
 use App\Services\Search\Data\SearchFilter;
 use App\Services\Search\Data\SearchQuery;
 use App\Services\Search\Data\SearchSort;
 use App\Services\Search\Enums\SearchOperator;
 use App\Services\Search\Enums\SearchSortDirection;
+use Illuminate\Database\Eloquent\Collection;
 
 class AiSearchQueryFactory
 {
@@ -42,6 +45,7 @@ class AiSearchQueryFactory
         }
 
         $filters = [];
+        $fields = $dataset->fields()->get()->keyBy('key');
 
         if (! is_array($arguments['filters']) || ! is_array($arguments['sorts'])) {
             throw new AiException('The search filters or sorts are invalid.');
@@ -58,11 +62,19 @@ class AiSearchQueryFactory
                 throw new AiException('The search filters are invalid.');
             }
 
-            if (! is_scalar($filter['value']) && $filter['value'] !== null) {
+            $field = $this->resolveField($fields, $filter['field']);
+            $value = $this->filterValue($filter, $operator);
+
+            if (! is_scalar($value) && ! is_array($value) && $value !== null) {
                 throw new AiException('The search filter value is invalid.');
             }
 
-            $filters[] = new SearchFilter($filter['field'], $operator, $filter['value']);
+            if ($operator === SearchOperator::Between) {
+                $filters[] = new SearchFilter($field->key, SearchOperator::GreaterThanOrEqual, $value[0]);
+                $filters[] = new SearchFilter($field->key, SearchOperator::LessThanOrEqual, $value[1]);
+            } else {
+                $filters[] = new SearchFilter($field->key, $operator, $value);
+            }
         }
 
         $sorts = [];
@@ -78,7 +90,7 @@ class AiSearchQueryFactory
                 throw new AiException('The search sorts are invalid.');
             }
 
-            $sorts[] = new SearchSort($sort['field'], $direction);
+            $sorts[] = new SearchSort($this->resolveField($fields, $sort['field'])->key, $direction);
         }
 
         $limit = $arguments['candidate_limit'] ?? $arguments['limit'] ?? null;
@@ -112,5 +124,55 @@ class AiSearchQueryFactory
                 limit: $limit,
             ),
         ];
+    }
+
+    /** @param Collection<int|string, DatasetField> $fields */
+    private function resolveField(Collection $fields, string $requested): DatasetField
+    {
+        $exact = $fields->get($requested);
+        if ($exact instanceof DatasetField) {
+            return $exact;
+        }
+
+        $role = PriceSemanticRole::normalize($requested);
+        if (! $role instanceof PriceSemanticRole) {
+            throw new AiException("The search field [{$requested}] is not available.");
+        }
+
+        $matches = $fields->filter(
+            fn (DatasetField $field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === $role,
+        )->values();
+
+        if ($matches->isEmpty() && $role === PriceSemanticRole::CurrentPrice) {
+            $matches = $fields->filter(
+                fn (DatasetField $field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::RegularPrice,
+            )->values();
+        }
+
+        if ($matches->count() !== 1) {
+            throw new AiException("The semantic search field [{$requested}] is ambiguous or unavailable.");
+        }
+
+        return $matches->first();
+    }
+
+    /** @param array<string, mixed> $filter */
+    private function filterValue(array $filter, SearchOperator $operator): mixed
+    {
+        if ($operator !== SearchOperator::Between) {
+            return $filter['value'];
+        }
+
+        $value = $filter['value'];
+        if (is_array($value) && count($value) === 2) {
+            return array_values($value);
+        }
+
+        if (array_key_exists('minimum', $filter) && array_key_exists('maximum', $filter)
+            && is_scalar($filter['minimum']) && is_scalar($filter['maximum'])) {
+            return [$filter['minimum'], $filter['maximum']];
+        }
+
+        throw new AiException('The between filter requires minimum and maximum values.');
     }
 }

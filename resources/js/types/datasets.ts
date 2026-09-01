@@ -29,7 +29,25 @@ export type DatasetSourceFile = {
 };
 
 export type DatasetSourceRunStatus =
-    'pending' | 'running' | 'completed' | 'failed';
+    'pending' | 'running' | 'completed' | 'partial' | 'validation_failed' | 'failed';
+
+export type DatasetImportError = {
+    row: number;
+    field: string;
+    stage: string;
+    source_field: string | null;
+    mapped_key: string | null;
+    raw_value: string | number | boolean | null;
+    normalized_value: string | number | boolean | null;
+    error_code: string;
+    message: string;
+};
+
+export type DatasetImportErrorSummary = {
+    totalErrors: number;
+    errorTypes: Record<string, number>;
+    samples: DatasetImportError[];
+};
 
 export type DatasetSourceRun = {
     id: number;
@@ -39,6 +57,7 @@ export type DatasetSourceRun = {
     rowsWritten: number;
     rowsFailed: number;
     error: string | null;
+    errorSummary: DatasetImportErrorSummary | null;
     startedAt: string | null;
     finishedAt: string | null;
     createdAt: string | null;

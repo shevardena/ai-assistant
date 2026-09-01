@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Enums\PriceSemanticRole;
 use App\Models\Bot;
 use App\Models\Dataset;
 
@@ -35,12 +36,14 @@ class BotRuntimeContextBuilder
                     continue;
                 }
 
+                $role = PriceSemanticRole::normalize($field->semantic_type, $field->key);
                 $fields[] = [
-                    'key' => (string) $field->key,
+                    'key' => $role?->value ?? (string) $field->key,
                     'type' => (string) $field->data_type,
                     'filterable' => (bool) $field->is_filterable,
                     'sortable' => (bool) $field->is_sortable,
                     'operators' => array_filter((array) $field->allowed_operators, 'is_string'),
+                    'semantic_role' => $role?->value,
                 ];
             }
 

@@ -27,6 +27,9 @@ class BotPromptBuilder
             $lines[] = 'Live catalog search is connected for this bot. Current product questions must be answered from a search_catalog call made for the current customer message.';
         }
 
+        $aroundTolerance = (float) config('live-read.around_tolerance_percent', 10);
+        $lines[] = 'For "around" price requests, represent a current_price between range using a plus/minus '.$aroundTolerance.'% tolerance.';
+
         if (is_string($bot->instructions) && trim($bot->instructions) !== '') {
             $lines[] = 'Bot instructions: '.Str::limit(Str::squish($bot->instructions), 2000);
         }
@@ -49,9 +52,10 @@ class BotPromptBuilder
         foreach ($context['datasets'] as $dataset) {
             $fields = collect($dataset['fields'])
                 ->map(fn (array $field): string => sprintf(
-                    '%s (%s; filterable=%s; sortable=%s; operators=%s)',
+                    '%s (%s%s; filterable=%s; sortable=%s; operators=%s)',
                     $field['key'],
                     $field['type'],
+                    $field['semantic_role'] === null ? '' : '; semantic_role='.$field['semantic_role'],
                     $field['filterable'] ? 'yes' : 'no',
                     $field['sortable'] ? 'yes' : 'no',
                     implode(',', $field['operators']),

@@ -119,7 +119,10 @@ class ConversationService
             $bot,
             $conversation,
             $message->text,
-            userMetadata: $message->metadata,
+            userMetadata: [
+                ...$message->metadata,
+                ...($message->attachments === [] ? [] : ['attachments' => $message->attachments]),
+            ],
             inboundMessage: $message,
             mode: $mode,
         );
@@ -324,16 +327,29 @@ class ConversationService
     ): ConversationReply {
         abort_unless($conversation->bot_id === $bot->id, 404);
 
-        $userMessage = $conversation->messages()->create([
-            'role' => 'user',
-            'type' => 'text',
-            'content' => $message,
-            'metadata' => $userMetadata,
-            'channel_connection_id' => $conversation->channel_connection_id,
-            'external_message_reference' => $inboundMessage?->externalMessageId,
-        ]);
+        $clientMessageId = data_get($userMetadata, 'client_message_id');
+        $userMessage = is_string($clientMessageId)
+            ? $conversation->messages()
+                ->where('role', 'user')
+                ->whereJsonContains('metadata->client_message_id', $clientMessageId)
+                ->latest('id')
+                ->first()
+            : null;
 
-        $conversation->update(['last_message_at' => now()]);
+        if ($userMessage === null) {
+            $hasAttachments = is_array($userMetadata['attachments'] ?? null)
+                && $userMetadata['attachments'] !== [];
+            $userMessage = $conversation->messages()->create([
+                'role' => 'user',
+                'type' => $hasAttachments ? 'image' : 'text',
+                'content' => $message,
+                'metadata' => $userMetadata,
+                'channel_connection_id' => $conversation->channel_connection_id,
+                'external_message_reference' => $inboundMessage?->externalMessageId,
+            ]);
+
+            $conversation->update(['last_message_at' => now()]);
+        }
 
         $availableTools = array_map(
             static fn (BotTool $tool): string => $tool->name(),
@@ -507,7 +523,7 @@ class ConversationService
     }
 
     /**
-     * @return list<array{role: 'user'|'assistant', content: string}>
+     * @return list<array{role: 'user'|'assistant', content: string, attachments?: list<array<string, mixed>>}>
      */
     private function history(Conversation $conversation, Message $currentMessage): array
     {
@@ -521,6 +537,9 @@ class ConversationService
             ->map(fn (Message $message): array => [
                 'role' => $message->role === 'assistant' ? 'assistant' : 'user',
                 'content' => (string) $message->content,
+                'attachments' => is_array(data_get($message->metadata, 'attachments'))
+                    ? data_get($message->metadata, 'attachments')
+                    : [],
             ])
             ->values()
             ->all());

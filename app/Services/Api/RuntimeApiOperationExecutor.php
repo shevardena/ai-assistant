@@ -42,6 +42,8 @@ class RuntimeApiOperationExecutor
         private readonly SourcePathResolver $sourcePathResolver,
         private readonly GraphqlRequestExecutor $graphqlRequestExecutor,
         private readonly ConversationCycleLogger $cycleLogger,
+        private readonly LiveReadQueryPlanner $liveReadPlanner,
+        private readonly LiveReadRecordMatcher $recordMatcher,
     ) {}
 
     /**
@@ -133,8 +135,8 @@ class RuntimeApiOperationExecutor
                     $matcherInputCount++;
                     $pageMatcherInputCount++;
                     if ($this->matchesMappedRecord($record, $plan->localFilters, $fields)
-                        && app(LiveReadRecordMatcher::class)->matchesConstraints($record, $plan->localConstraints, $fields)
-                        && app(LiveReadRecordMatcher::class)->matchesSearchText($record, $plan->localSearchText, $fields)) {
+                        && $this->recordMatcher->matchesConstraints($record, $plan->localConstraints, $fields)
+                        && $this->recordMatcher->matchesSearchText($record, $plan->localSearchText, $fields)) {
                         $records[] = $record;
                         $matcherOutputCount++;
                         $pageMatcherOutputCount++;
@@ -181,10 +183,57 @@ class RuntimeApiOperationExecutor
                 $truncated = true;
             }
 
+            $complete = ! $truncated && ! $remoteMoreAvailable;
+            $sortMode = $plan->sortMode;
+            if ($plan->localSorts !== [] && $complete) {
+                $sortMode = 'complete_local';
+            }
+            $globalSortGuaranteed = $plan->globalSortGuaranteed
+                || ($plan->localSorts !== [] && $complete);
+
             if ($plan->localSorts !== []) {
-                $records = app(LiveReadRecordMatcher::class)->sort($records, $plan->localSorts);
+                $records = $this->recordMatcher->sort($records, $plan->localSorts, $fields);
             }
             $records = array_slice($records, 0, $plan->effectiveResultLimit);
+
+            $this->cycleLogger->event('search_catalog.source.filtered', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation_id' => $runtimeOperation->operation->id,
+                'operation' => $runtimeOperation->operation->key,
+                'candidates_before' => $matcherInputCount,
+                'candidates_after' => $matcherOutputCount,
+                'local_filters_applied' => count($plan->localFilters) + count($plan->localConstraints),
+            ]);
+            $this->cycleLogger->event('search_catalog.source.sorted', [
+                'bot_id' => $runtimeOperation->bot->id,
+                'team_id' => $runtimeOperation->bot->team_id,
+                'operation_id' => $runtimeOperation->operation->id,
+                'operation' => $runtimeOperation->operation->key,
+                'sort_mode' => $sortMode,
+                'global_sort_guaranteed' => $globalSortGuaranteed,
+            ]);
+
+            $execution = [
+                'filters' => [
+                    'remote' => $plan->remoteFilters,
+                    'local' => $plan->localFilters,
+                    'unsupported' => $plan->unsupportedFilters,
+                ],
+                'constraints' => [
+                    'remote' => $plan->remoteConstraints,
+                    'local' => $plan->localConstraints,
+                    'unsupported' => $plan->unsupportedConstraints,
+                ],
+                'sort' => [
+                    'mode' => $sortMode,
+                    'global_guaranteed' => $globalSortGuaranteed,
+                ],
+                'complete' => $complete,
+                'filters_complete' => $complete,
+                'sort_complete' => $sortMode !== 'local_bounded' && $sortMode !== 'remote_bounded',
+                'more_available' => $moreAvailable,
+            ];
 
             if ($plan->localConstraints !== []) {
                 $this->cycleLogger->event('search_catalog.local_constraints.matched', [
@@ -197,9 +246,18 @@ class RuntimeApiOperationExecutor
             return RuntimeApiResult::success([
                 'records' => $records,
                 'meta' => [
-                    'complete' => ! $truncated && ! $remoteMoreAvailable,
+                    'complete' => $complete,
                     'truncated' => $truncated,
                     'more_available' => $moreAvailable,
+                    'filters_complete' => $complete,
+                    'sort_complete' => $sortMode !== 'local_bounded' && $sortMode !== 'remote_bounded',
+                    'sort_mode' => $sortMode,
+                    'global_sort_guaranteed' => $globalSortGuaranteed,
+                    'remote_filters' => $plan->remoteFilters,
+                    'local_filters' => $plan->localFilters,
+                    'unsupported_filters' => $plan->unsupportedFilters,
+                    'unsupported_sorts' => $plan->unsupportedSorts,
+                    'execution' => $execution,
                     'pages_fetched' => $pages,
                     'candidates_examined' => min($candidates, $plan->candidateBudget),
                     'effective_result_limit' => $plan->effectiveResultLimit,
@@ -984,7 +1042,7 @@ class RuntimeApiOperationExecutor
     /** @return array<string, array<string, mixed>> */
     private function mappedFieldNames(RuntimeApiOperation $runtimeOperation): array
     {
-        return app(LiveReadQueryPlanner::class)->fields($runtimeOperation->operation);
+        return $this->liveReadPlanner->fields($runtimeOperation->operation);
     }
 
     /** @param array<string, mixed> $mapping */
@@ -1194,7 +1252,7 @@ class RuntimeApiOperationExecutor
      */
     private function matchesMappedRecord(array $record, array $filters, array $fields): bool
     {
-        return app(LiveReadRecordMatcher::class)->matches($record, $filters, $fields);
+        return $this->recordMatcher->matches($record, $filters, $fields);
     }
 
     /** @param array<string, mixed> $record */

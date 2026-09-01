@@ -11,4 +11,5 @@ enum SearchOperator: string
     case LessThan = 'lt';
     case LessThanOrEqual = 'lte';
     case Contains = 'contains';
+    case Between = 'between';
 }

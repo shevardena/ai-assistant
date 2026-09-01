@@ -251,6 +251,7 @@ class DatasetController extends Controller
     {
         $startedAt = $sourceRun->getAttribute('started_at');
         $finishedAt = $sourceRun->getAttribute('finished_at');
+        $errorSummary = data_get($sourceRun->metadata, 'error_summary');
 
         return [
             'id' => $sourceRun->id,
@@ -260,6 +261,11 @@ class DatasetController extends Controller
             'rowsWritten' => $sourceRun->rows_written,
             'rowsFailed' => $sourceRun->rows_failed,
             'error' => $sourceRun->error,
+            'errorSummary' => is_array($errorSummary) ? [
+                'totalErrors' => (int) ($errorSummary['total_errors'] ?? 0),
+                'errorTypes' => is_array($errorSummary['error_types'] ?? null) ? $errorSummary['error_types'] : [],
+                'samples' => is_array($errorSummary['samples'] ?? null) ? $errorSummary['samples'] : [],
+            ] : null,
             'startedAt' => $startedAt instanceof CarbonInterface ? $startedAt->toISOString() : null,
             'finishedAt' => $finishedAt instanceof CarbonInterface ? $finishedAt->toISOString() : null,
             'createdAt' => $sourceRun->created_at?->toISOString(),

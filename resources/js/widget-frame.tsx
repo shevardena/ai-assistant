@@ -1,6 +1,7 @@
 import {
     ArrowDown,
     ArrowRight,
+    ImagePlus,
     Maximize2,
     Mic,
     MessageCircle,
@@ -10,7 +11,7 @@ import {
     SendHorizontal,
     X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppointmentSelectionError } from '@/components/appointment-slots-block';
 import type {
@@ -43,6 +44,7 @@ import type {
 import { visualMessageMeta } from './widget-grouping';
 
 type ChatMessage = {
+    id?: number | string;
     role: 'user' | 'assistant' | 'system';
     content: string | null;
     created_at?: string | null;
@@ -50,6 +52,18 @@ type ChatMessage = {
     source?: 'human' | 'system' | null;
     sender?: string | null;
     cards?: ProductCard[];
+    status?: 'sending' | 'sent' | 'failed';
+    optimistic?: boolean;
+    attachments?: ChatAttachment[];
+    attachmentFile?: File;
+};
+
+type ChatAttachment = {
+    type: 'image';
+    mime_type: string;
+    url: string;
+    name?: string;
+    size?: number;
 };
 
 type SessionPayload = {
@@ -181,6 +195,8 @@ function WidgetFrame({
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [showWelcome, setShowWelcome] = useState(false);
     const [value, setValue] = useState('');
+    const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [imageError, setImageError] = useState<string | null>(null);
     const [composerRevision, setComposerRevision] = useState(0);
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
@@ -195,6 +211,19 @@ function WidgetFrame({
     const [expanded, setExpanded] = useState(false);
     const [showLatest, setShowLatest] = useState(false);
     const messagesRef = useRef<HTMLDivElement>(null);
+    const imageInputRef = useRef<HTMLInputElement>(null);
+    const imagePreviewUrl = useMemo(
+        () => (selectedImage ? URL.createObjectURL(selectedImage) : null),
+        [selectedImage],
+    );
+
+    useEffect(() => {
+        return () => {
+            if (imagePreviewUrl) {
+                URL.revokeObjectURL(imagePreviewUrl);
+            }
+        };
+    }, [imagePreviewUrl]);
 
     const transcribeRecording = useCallback(
         async (blob: Blob, signal: AbortSignal): Promise<string> => {
@@ -315,6 +344,17 @@ function WidgetFrame({
                 setAfterMessageId(payload.next_after_message_id);
                 setChatMessages(payload.messages ?? []);
                 setShowWelcome((payload.messages ?? []).length === 0);
+
+                if (newConversation) {
+                    setSelectedImage(null);
+                    setImageError(null);
+                    setValue('');
+
+                    if (imageInputRef.current) {
+                        imageInputRef.current.value = '';
+                    }
+                }
+
                 localStorage.setItem(
                     visitorStorageKey(botId),
                     payload.visitor_id,
@@ -448,10 +488,26 @@ function WidgetFrame({
                 setAfterMessageId(payload.next_after_message_id);
 
                 if (payload.messages.length > 0) {
-                    setChatMessages((current) => [
-                        ...current,
-                        ...payload.messages,
-                    ]);
+                    setChatMessages((current) => {
+                        const currentIds = new Set(
+                            current
+                                .map((message) => message.id)
+                                .filter(
+                                    (id): id is number | string =>
+                                        typeof id === 'number' ||
+                                        typeof id === 'string',
+                                ),
+                        );
+
+                        return [
+                            ...current,
+                            ...payload.messages.filter(
+                                (message) =>
+                                    message.id === undefined ||
+                                    !currentIds.has(message.id),
+                            ),
+                        ];
+                    });
                 }
             } catch {
                 // Polling is best-effort; the existing conversation remains usable.
@@ -467,24 +523,51 @@ function WidgetFrame({
         };
     }, [afterMessageId, conversationId, handoffStatus, visitorId, botId]);
 
-    async function send() {
-        const message = value.trim();
+    function chooseImage(file: File | undefined): void {
+        if (!file) {
+            return;
+        }
+
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            setImageError('Choose a JPEG, PNG, or WebP image.');
+
+            return;
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+            setImageError('Images must be 10 MB or smaller.');
+
+            return;
+        }
+
+        setImageError(null);
+        setSelectedImage(file);
+    }
+
+    async function send(
+        submittedText?: string,
+        optimisticMessageId?: string,
+        submittedImage?: File,
+    ) {
+        const message = (submittedText ?? value).trim();
+        const isRetry = optimisticMessageId !== undefined;
+        const image = submittedImage ?? selectedImage;
 
         if (
-            !message ||
+            (!message && image === null) ||
             sending ||
             visitorId === null ||
             conversationId === null ||
-            availability === 'offline'
+            (!isRetry && availability === 'offline')
         ) {
             return;
         }
 
         setSending(true);
         setError(null);
-        setValue('');
-        setComposerRevision((current) => current + 1);
-        const pendingWelcome = showWelcome
+        const messageId = optimisticMessageId ?? `temp-${crypto.randomUUID()}`;
+        const failureMessageId = `${messageId}-error`;
+        const pendingWelcome = !isRetry && showWelcome
             ? {
                   role: 'assistant' as const,
                   content: welcome,
@@ -493,33 +576,103 @@ function WidgetFrame({
                   sender: `${appearance.assistant_name} · ${appearance.assistant_subtitle}`,
               }
             : null;
-        setShowWelcome(false);
+        const optimisticMessage: ChatMessage = {
+            id: messageId,
+            role: 'user',
+            content: message,
+            created_at: new Date().toISOString(),
+            status: 'sending',
+            optimistic: true,
+            attachments: imagePreviewUrl
+                ? [
+                      {
+                          type: 'image',
+                          mime_type: image?.type ?? 'image/jpeg',
+                          url: imagePreviewUrl,
+                          name: image?.name,
+                          size: image?.size,
+                      },
+                  ]
+                : [],
+            attachmentFile: image ?? undefined,
+        };
+
+        if (isRetry) {
+            setChatMessages((current) =>
+                current
+                    .filter((item) => item.id !== failureMessageId)
+                    .map((item) =>
+                        item.id === messageId
+                            ? { ...item, status: 'sending' }
+                            : item,
+                    ),
+            );
+        } else {
+            setChatMessages((current) => [
+                ...current,
+                ...(pendingWelcome ? [pendingWelcome] : []),
+                optimisticMessage,
+            ]);
+            setValue('');
+            setSelectedImage(null);
+            setImageError(null);
+
+            if (imageInputRef.current) {
+                imageInputRef.current.value = '';
+            }
+
+            setComposerRevision((current) => current + 1);
+            setShowWelcome(false);
+        }
 
         try {
+            const clientMessageId = messageId.replace(/^temp-/, '');
+            const body = image
+                ? (() => {
+                      const formData = new FormData();
+                      formData.append('visitor_id', visitorId);
+                      formData.append('conversation_id', conversationId);
+                      formData.append('client_message_id', clientMessageId);
+
+                      if (message) {
+                          formData.append('message', message);
+                      }
+
+                      formData.append('image', image, image.name);
+
+                      return formData;
+                  })()
+                : JSON.stringify({
+                      visitor_id: visitorId,
+                      conversation_id: conversationId,
+                      client_message_id: clientMessageId,
+                      message,
+                  });
             const response = await fetch(messagesRoute.url(botId), {
                 method: 'POST',
-                headers: widgetHeaders(),
-                body: JSON.stringify({
-                    visitor_id: visitorId,
-                    conversation_id: conversationId,
-                    message,
-                }),
+                headers: widgetHeaders(image === null),
+                body,
             });
-            const payload = await response.json();
+            const payload = (await response.json()) as MessageResponsePayload;
 
             if (!response.ok) {
-                setAvailability('offline');
+                if (payload.error === 'unavailable') {
+                    setAvailability('offline');
+                }
+
                 setChatMessages((current) => [
-                    ...(pendingWelcome ? [pendingWelcome] : []),
-                    ...current,
+                    ...current.map((item) =>
+                        item.id === messageId
+                            ? { ...item, status: 'failed' as const }
+                            : item,
+                    ),
                     {
-                        role: 'user',
-                        content: message,
-                        created_at: new Date().toISOString(),
-                    },
-                    {
+                        id: failureMessageId,
                         role: 'assistant',
-                        content: payload.message || fallback,
+                        content:
+                            typeof payload.message === 'string'
+                                ? payload.message
+                                : fallback,
                         blocks: [],
                         created_at: new Date().toISOString(),
                     },
@@ -532,22 +685,39 @@ function WidgetFrame({
             setAfterMessageId(payload.next_after_message_id ?? afterMessageId);
             setAvailability('online');
             setChatMessages((current) => [
-                ...(pendingWelcome ? [pendingWelcome] : []),
-                ...current,
-                payload.user_message,
-                payload.message,
+                ...current.filter(
+                    (item) =>
+                        item.id !== messageId && item.id !== failureMessageId,
+                ),
+                payload.user_message
+                    ? {
+                          ...payload.user_message,
+                          status: 'sent' as const,
+                          optimistic: false,
+                      }
+                    : {
+                          ...optimisticMessage,
+                          status: 'sent' as const,
+                          optimistic: false,
+                      },
+                ...(payload.message && typeof payload.message !== 'string'
+                    ? [payload.message]
+                    : []),
             ]);
         } catch {
             setAvailability('offline');
             setChatMessages((current) => [
-                ...(pendingWelcome ? [pendingWelcome] : []),
-                ...current,
+                ...current.map((item) =>
+                    item.id === messageId
+                        ? { ...item, status: 'failed' as const }
+                        : item,
+                ),
                 {
-                    role: 'user',
-                    content: message,
-                    created_at: new Date().toISOString(),
+                    id: failureMessageId,
+                    role: 'assistant',
+                    content: fallback,
+                    blocks: [],
                 },
-                { role: 'assistant', content: fallback, blocks: [] },
             ]);
         } finally {
             setSending(false);
@@ -853,7 +1023,7 @@ function WidgetFrame({
 
                     return (
                         <div
-                            key={item.role + '-' + index}
+                            key={item.id ?? item.role + '-' + index}
                             className={meta.groupStart ? 'mt-2' : '-mt-2'}
                         >
                             {showDate ? (
@@ -869,6 +1039,19 @@ function WidgetFrame({
                                 onAction={handleBlockAction}
                                 onFormSubmit={handleFormSubmit}
                                 onAppointmentSelect={handleAppointmentSelect}
+                                onRetry={(retryMessage) => {
+                                    if (
+                                        typeof retryMessage.id === 'string' &&
+                                        (retryMessage.content ||
+                                            retryMessage.attachmentFile)
+                                    ) {
+                                        void send(
+                                            retryMessage.content ?? '',
+                                            retryMessage.id,
+                                            retryMessage.attachmentFile,
+                                        );
+                                    }
+                                }}
                             />
                         </div>
                     );
@@ -897,6 +1080,44 @@ function WidgetFrame({
                     </button>
                 ) : null}
             </div>
+            {selectedImage && imagePreviewUrl ? (
+                <div className="flex items-center gap-3 border-t border-neutral-200/70 px-3 py-2">
+                    <img
+                        src={imagePreviewUrl}
+                        alt="Selected image preview"
+                        className="size-14 rounded-xl border border-neutral-200 object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-neutral-700">
+                            {selectedImage.name}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">
+                            Ready to send
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSelectedImage(null);
+                            setImageError(null);
+
+                            if (imageInputRef.current) {
+                                imageInputRef.current.value = '';
+                            }
+                        }}
+                        className="flex size-8 shrink-0 items-center justify-center rounded-full text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-800"
+                        aria-label="Remove selected image"
+                        title="Remove selected image"
+                    >
+                        <X className="size-4" />
+                    </button>
+                </div>
+            ) : null}
+            {imageError ? (
+                <p className="shrink-0 px-4 pb-2 text-xs text-red-600" role="alert">
+                    {imageError}
+                </p>
+            ) : null}
             <form
                 className="flex shrink-0 items-center gap-2 border-t border-neutral-200/70 bg-white/80 p-3 backdrop-blur"
                 style={{ backgroundColor: appearance.background_color }}
@@ -906,6 +1127,26 @@ function WidgetFrame({
                 }}
             >
                 <div className="flex shrink-0 items-center gap-1">
+                    <input
+                        ref={imageInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={(event) => {
+                            chooseImage(event.target.files?.[0]);
+                        }}
+                        disabled={sending || error !== null || availability === 'offline'}
+                    />
+                    <button
+                        type="button"
+                        onClick={() => imageInputRef.current?.click()}
+                        disabled={sending || error !== null || availability === 'offline'}
+                        className="flex size-11 shrink-0 items-center justify-center rounded-full border border-neutral-200/90 text-neutral-600 transition hover:border-violet-300 hover:text-violet-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Attach an image"
+                        title="Attach an image"
+                    >
+                        <ImagePlus className="size-4" />
+                    </button>
                     {voiceInputAvailable && voiceRecorder.state === 'recording' ? (
                         <>
                             <button
@@ -999,7 +1240,7 @@ function WidgetFrame({
                     }}
                     disabled={
                         sending ||
-                        value.trim() === '' ||
+                        (value.trim() === '' && selectedImage === null) ||
                         error !== null ||
                         availability === 'offline'
                     }
@@ -1049,6 +1290,7 @@ function MessageRow({
     onAction,
     onFormSubmit,
     onAppointmentSelect,
+    onRetry,
 }: {
     item: ChatMessage;
     appearance: BotWidgetAppearance;
@@ -1060,6 +1302,7 @@ function MessageRow({
     ) => Promise<Extract<ConversationBlock, { type: 'confirmation' }>>;
     onFormSubmit: FormBlockAction;
     onAppointmentSelect: AppointmentSlotsAction;
+    onRetry: (message: ChatMessage) => void;
 }) {
     if (item.role === 'user') {
         return (
@@ -1071,10 +1314,46 @@ function MessageRow({
                         color: appearance.user_message_text_color,
                     }}
                 >
-                    <p className="break-words whitespace-pre-wrap">
-                        {item.content}
-                    </p>
+                    {item.attachments?.map((attachment, index) => (
+                        <a
+                            key={attachment.url + index}
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mb-2 block last:mb-0"
+                        >
+                            <img
+                                src={attachment.url}
+                                alt={attachment.name ?? 'Uploaded image'}
+                                className="max-h-44 max-w-56 rounded-xl object-contain"
+                            />
+                        </a>
+                    ))}
+                    {item.content ? (
+                        <p className="break-words whitespace-pre-wrap">
+                            {item.content}
+                        </p>
+                    ) : null}
                 </div>
+                {item.status === 'sending' ? (
+                    <span className="mt-1 text-[10px] text-neutral-400">
+                        Sending…
+                    </span>
+                ) : null}
+                {item.status === 'failed' ? (
+                    <div className="mt-1 flex items-center gap-2 text-[10px] text-red-600">
+                        <span>Failed to send</span>
+                        {item.optimistic && typeof item.id === 'string' ? (
+                            <button
+                                type="button"
+                                className="font-semibold underline underline-offset-2"
+                                onClick={() => onRetry(item)}
+                            >
+                                Retry
+                            </button>
+                        ) : null}
+                    </div>
+                ) : null}
                 {meta.groupEnd ? <MessageTimestamp meta={meta} /> : null}
             </div>
         );
@@ -1244,6 +1523,14 @@ type FormResponsePayload = {
     errors?: Record<string, string | string[]>;
 };
 
+type MessageResponsePayload = {
+    error?: string;
+    handoff_status?: 'ai' | 'requested' | 'human';
+    next_after_message_id?: number | null;
+    message?: ChatMessage | string;
+    user_message?: ChatMessage;
+};
+
 type AppointmentResponsePayload = {
     appointment_block?: Extract<
         ConversationBlock,
@@ -1265,10 +1552,10 @@ function normalizeErrors(
     );
 }
 
-function widgetHeaders(): HeadersInit {
+function widgetHeaders(json = true): HeadersInit {
     return {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
+        ...(json ? { 'Content-Type': 'application/json' } : {}),
         'X-Widget-Origin': parentOrigin(),
     };
 }

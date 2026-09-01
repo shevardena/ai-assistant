@@ -14,6 +14,9 @@ Route::prefix('widget')
         Route::post('{botPublicId}/session', [WidgetApiController::class, 'session'])->name('widget.session');
         Route::get('{botPublicId}/status', [WidgetApiController::class, 'status'])->name('widget.status');
         Route::post('{botPublicId}/messages', [WidgetApiController::class, 'message'])->name('widget.messages');
+        Route::get('{botPublicId}/attachments/{message}', [WidgetApiController::class, 'attachment'])
+            ->middleware('signed')
+            ->name('widget.attachments');
         Route::post('{botPublicId}/transcribe', [WidgetApiController::class, 'transcribe'])
             ->middleware('throttle:widget-speech')
             ->name('widget.transcribe');

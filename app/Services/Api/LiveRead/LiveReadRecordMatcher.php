@@ -25,7 +25,8 @@ final class LiveReadRecordMatcher
                 return false;
             }
 
-            $actual = $this->paths->get($record, (string) ($filter['field'] ?? ''));
+            $field = (string) ($filter['field'] ?? '');
+            $actual = $this->valueForField($record, $field, $definition);
             if (! $this->matchesOne($actual, (string) $filter['operator'], $filter['value'] ?? null, (string) $definition['type'])) {
                 return false;
             }
@@ -93,15 +94,16 @@ final class LiveReadRecordMatcher
     /**
      * @param  list<array<string, mixed>>  $records
      * @param  list<array<string, mixed>>  $sorts
+     * @param  array<string, array<string, mixed>>  $fields
      * @return list<array<string, mixed>>
      */
-    public function sort(array $records, array $sorts): array
+    public function sort(array $records, array $sorts, array $fields = []): array
     {
-        usort($records, function (array $left, array $right) use ($sorts): int {
+        usort($records, function (array $left, array $right) use ($sorts, $fields): int {
             foreach ($sorts as $sort) {
                 $comparison = $this->compare(
-                    $this->paths->get($left, (string) ($sort['field'] ?? '')),
-                    $this->paths->get($right, (string) ($sort['field'] ?? '')),
+                    $this->valueForSort($left, $sort, $fields),
+                    $this->valueForSort($right, $sort, $fields),
                     (string) ($sort['type'] ?? 'string'),
                 );
                 if ($comparison !== 0) {
@@ -113,6 +115,32 @@ final class LiveReadRecordMatcher
         });
 
         return $records;
+    }
+
+    /** @param array<string, mixed> $sort */
+    private function valueForSort(array $record, array $sort, array $fields): mixed
+    {
+        $field = (string) ($sort['field'] ?? '');
+        $definition = $fields[$field] ?? [];
+
+        return $this->valueForField($record, $field, is_array($definition) ? $definition : []);
+    }
+
+    /** @param array<string, mixed> $definition */
+    private function valueForField(array $record, string $field, array $definition): mixed
+    {
+        if (is_array($definition['derived_from'] ?? null)) {
+            $current = $this->paths->get($record, (string) ($definition['derived_from']['current_price'] ?? ''));
+            $regular = $this->paths->get($record, (string) ($definition['derived_from']['regular_price'] ?? ''));
+            $current = $this->normalizeTypedValue($current, 'decimal');
+            $regular = $this->normalizeTypedValue($regular, 'decimal');
+
+            return $regular === null || $regular <= 0 || $current === null
+                ? null
+                : (($regular - $current) / $regular) * 100;
+        }
+
+        return $this->paths->get($record, (string) ($definition['resolved_field'] ?? $field));
     }
 
     private function matchesOne(mixed $actual, string $operator, mixed $expected, string $type): bool
@@ -130,16 +158,22 @@ final class LiveReadRecordMatcher
             $range = array_values((array) $expected);
 
             return count($range) === 2
-                && $this->compare($actual, $range[0], $type) >= 0
-                && $this->compare($actual, $range[1], $type) <= 0;
+                && $this->matchesOne($actual, 'gte', $range[0], $type)
+                && $this->matchesOne($actual, 'lte', $range[1], $type);
         }
         if ($actual === null) {
             return false;
         }
 
+        $normalizedActual = $this->normalizeTypedValue($actual, $type);
+        $normalizedExpected = $this->normalizeTypedValue($expected, $type);
+        if ($normalizedActual === null || $normalizedExpected === null) {
+            return false;
+        }
+
         if ($type === 'string') {
-            $left = mb_strtolower((string) $actual);
-            $right = mb_strtolower((string) $expected);
+            $left = mb_strtolower($normalizedActual);
+            $right = mb_strtolower($normalizedExpected);
 
             return match ($operator) {
                 'eq' => $left === $right,
@@ -151,7 +185,7 @@ final class LiveReadRecordMatcher
             };
         }
 
-        $comparison = $this->compare($actual, $expected, $type);
+        $comparison = $this->compare($normalizedActual, $normalizedExpected, $type);
 
         return match ($operator) {
             'eq' => $comparison === 0,
@@ -166,15 +200,68 @@ final class LiveReadRecordMatcher
 
     private function compare(mixed $left, mixed $right, string $type): int
     {
+        $normalizedLeft = $this->normalizeTypedValue($left, $type);
+        $normalizedRight = $this->normalizeTypedValue($right, $type);
+
+        if ($normalizedLeft === null && $normalizedRight === null) {
+            return 0;
+        }
+        if ($normalizedLeft === null) {
+            return 1;
+        }
+        if ($normalizedRight === null) {
+            return -1;
+        }
+
         if (in_array($type, ['integer', 'decimal'], true)) {
-            return ((float) $left) <=> ((float) $right);
+            return $normalizedLeft <=> $normalizedRight;
         }
 
         if (in_array($type, ['date', 'datetime'], true)) {
-            return strtotime((string) $left) <=> strtotime((string) $right);
+            return $normalizedLeft <=> $normalizedRight;
         }
 
-        return mb_strtolower((string) $left) <=> mb_strtolower((string) $right);
+        if ($type === 'boolean') {
+            return ((int) $normalizedLeft) <=> ((int) $normalizedRight);
+        }
+
+        return mb_strtolower($normalizedLeft) <=> mb_strtolower($normalizedRight);
+    }
+
+    private function normalizeTypedValue(mixed $value, string $type): int|float|bool|string|null
+    {
+        if ($value === null || ! is_scalar($value)) {
+            return null;
+        }
+
+        return match ($type) {
+            'integer' => filter_var($value, FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE),
+            'decimal' => is_numeric($value) && is_finite((float) $value) ? (float) $value : null,
+            'boolean' => $this->normalizeBoolean($value),
+            'date', 'datetime' => ($timestamp = strtotime((string) $value)) === false ? null : $timestamp,
+            default => (string) $value,
+        };
+    }
+
+    private function normalizeBoolean(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            $value = strtolower(trim($value));
+        }
+
+        if (in_array($value, [1, '1', 'true', 'yes', 'on'], true)) {
+            return true;
+        }
+
+        if (in_array($value, [0, '0', 'false', 'no', 'off'], true)) {
+            return false;
+        }
+
+        return null;
     }
 
     /**

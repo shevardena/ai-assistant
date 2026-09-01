@@ -32,6 +32,12 @@ function syncOperationContext(array $operationOverrides = []): array
     ]);
     DatasetField::factory()->create([
         'dataset_id' => $dataset->id,
+        'source_path' => 'id',
+        'key' => 'id',
+        'data_type' => 'string',
+    ]);
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
         'source_path' => 'name',
         'key' => 'name',
         'data_type' => 'string',

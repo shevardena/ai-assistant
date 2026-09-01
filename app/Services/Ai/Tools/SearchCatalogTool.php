@@ -2,9 +2,11 @@
 
 namespace App\Services\Ai\Tools;
 
+use App\Enums\PriceSemanticRole;
 use App\Models\ApiOperation;
 use App\Models\Bot;
 use App\Models\Dataset;
+use App\Models\DatasetField;
 use App\Models\DatasetRecord;
 use App\Services\Ai\AiException;
 use App\Services\Ai\BotRuntimeContextBuilder;
@@ -16,6 +18,7 @@ use App\Services\Ai\Tools\Contracts\BotTool;
 use App\Services\Api\LiveRead\LiveReadQuery;
 use App\Services\Api\LiveRead\LiveReadQueryPlanner;
 use App\Services\Api\LiveRead\LiveReadRecordMatcher;
+use App\Services\Api\RuntimeApiOperation;
 use App\Services\Api\RuntimeApiOperationExecutor;
 use App\Services\Api\RuntimeApiOperationResolver;
 use App\Services\Conversations\ConversationCycleLogger;
@@ -24,6 +27,7 @@ use App\Services\Search\Data\SearchResult;
 use App\Services\Search\Enums\SearchSortDirection;
 use App\Services\Search\Exceptions\InvalidSearchCriteriaException;
 use App\Services\Search\SearchService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
 use Throwable;
@@ -51,7 +55,7 @@ class SearchCatalogTool implements BotTool
 
     public function description(): string
     {
-        return 'Search one catalog using concise, canonical product terms and supported business search criteria.';
+        return 'Search connected product catalogs using concise, canonical product terms and supported business search criteria.';
     }
 
     /**
@@ -74,6 +78,12 @@ class SearchCatalogTool implements BotTool
                 'dataset' => [
                     'type' => ['string', 'null'],
                     'enum' => [...$datasetSlugs, null],
+                    'description' => 'Optional preferred catalog slug. This is a hint by default and does not restrict the search unless source_scope is specific.',
+                ],
+                'source_scope' => [
+                    'type' => ['string', 'null'],
+                    'enum' => ['all', 'specific', null],
+                    'description' => 'Use specific only when the customer explicitly asks for one named catalog; otherwise use all or null.',
                 ],
                 'text' => [
                     'type' => ['string', 'null'],
@@ -90,8 +100,10 @@ class SearchCatalogTool implements BotTool
                                 'enum' => ['eq', 'neq', 'contains', 'starts_with', 'ends_with', 'in', 'gt', 'gte', 'lt', 'lte', 'between', 'is_null', 'is_not_null'],
                             ],
                             'value' => ['type' => ['string', 'number', 'boolean', 'null']],
+                            'minimum' => ['type' => ['number', 'null']],
+                            'maximum' => ['type' => ['number', 'null']],
                         ],
-                        'required' => ['field', 'operator', 'value'],
+                        'required' => ['field', 'operator', 'value', 'minimum', 'maximum'],
                         'additionalProperties' => false,
                     ],
                 ],
@@ -146,7 +158,7 @@ class SearchCatalogTool implements BotTool
                     'description' => 'Use exact for a requested number, minimum for at least, maximum for at most, range for a lower and upper bound, or all for a bounded broad result.',
                 ],
             ],
-            'required' => ['dataset', 'text', 'filters', 'constraints', 'sorts', 'limit', 'result_count'],
+            'required' => ['dataset', 'source_scope', 'text', 'filters', 'constraints', 'sorts', 'limit', 'result_count'],
             'additionalProperties' => false,
         ];
     }
@@ -172,7 +184,11 @@ class SearchCatalogTool implements BotTool
         $searchMode = $literalSearchText !== null
             ? 'literal'
             : ($hasSearchText || $constraints !== [] ? 'semantic' : 'browse');
-        $arguments = [...$arguments, 'constraints' => $constraints];
+        $arguments = [
+            ...$arguments,
+            'filters' => $this->normalizeFilterValues($arguments['filters'] ?? []),
+            'constraints' => $constraints,
+        ];
 
         $this->cycleLogger->event('search_catalog.intent.resolved', [
             'original_message' => Str::limit($context->userMessage === null ? '' : (string) $context->userMessage->content, 1000),
@@ -191,6 +207,7 @@ class SearchCatalogTool implements BotTool
             'original_customer_message' => Str::limit($context->userMessage === null ? '' : (string) $context->userMessage->content, 1000),
             'tool_arguments' => [
                 'dataset' => $rawArguments['dataset'] ?? null,
+                'source_scope' => $rawArguments['source_scope'] ?? null,
                 'text' => $rawArguments['text'] ?? null,
                 'filters' => $rawArguments['filters'] ?? [],
                 'constraints' => $rawArguments['constraints'] ?? [],
@@ -219,9 +236,23 @@ class SearchCatalogTool implements BotTool
             $requestedDataset = is_string($arguments['dataset'] ?? null)
                 ? $arguments['dataset']
                 : null;
-            $resolution = $this->sourceResolver->resolve($bot, $requestedDataset);
+            $sourceScope = ($arguments['source_scope'] ?? null) === 'specific' && $requestedDataset !== null
+                ? 'specific'
+                : 'all';
+            $resolution = $this->sourceResolver->resolve(
+                $bot,
+                $requestedDataset,
+                restrictToRequested: $sourceScope === 'specific',
+            );
+            $selectionMode = $sourceScope === 'specific'
+                ? 'explicit_source'
+                : (count($resolution['eligible']) > 1 ? 'federated' : 'single_available_source');
             $this->cycleLogger->event('search_catalog.sources.resolved', [
-                'requested_dataset' => $requestedDataset,
+                'selection_mode' => $selectionMode,
+                'requested_dataset' => $sourceScope === 'specific' ? $requestedDataset : null,
+                'preferred_dataset' => $sourceScope === 'all' ? $requestedDataset : null,
+                'requested_dataset_treated_as' => $sourceScope === 'specific' ? 'explicit_source' : ($requestedDataset === null ? null : 'hint'),
+                'source_scope' => $sourceScope,
                 'eligible_sources' => array_map(fn (array $source): array => $this->sourceLog($source), $resolution['eligible']),
                 'rejected_sources' => $resolution['rejected'],
             ]);
@@ -287,6 +318,46 @@ class SearchCatalogTool implements BotTool
             return ToolResult::failure('invalid_search', 'The selected product catalog is unavailable.');
         }
 
+        $datasetFields = $dataset->fields()->get();
+        $this->cycleLogger->event('search_catalog.price_semantics.resolved', [
+            'source' => $this->sourceLog($source),
+            'requested_fields' => $this->datasetPriceResolution($datasetFields),
+        ]);
+        $derivedDiscountFilters = [];
+        $hasExplicitDiscountField = $datasetFields->contains(
+            fn ($field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::DiscountPercent,
+        );
+        $hasDiscountPair = $datasetFields->contains(
+            fn ($field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::CurrentPrice,
+        ) && $datasetFields->contains(
+            fn ($field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::RegularPrice,
+        );
+        $baseFilters = [];
+        foreach ((array) ($arguments['filters'] ?? []) as $filter) {
+            if (is_array($filter) && ($filter['field'] ?? null) === PriceSemanticRole::DiscountPercent->value && ! $hasExplicitDiscountField) {
+                if (! $hasDiscountPair) {
+                    return ToolResult::failure('unsupported_search_criteria', 'This catalog does not expose discount pricing data.');
+                }
+                $derivedDiscountFilters[] = $filter;
+
+                continue;
+            }
+
+            $baseFilters[] = $filter;
+        }
+
+        if ($derivedDiscountFilters !== []) {
+            $currentField = $datasetFields->first(fn ($field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::CurrentPrice);
+            $regularField = $datasetFields->first(fn ($field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::RegularPrice);
+            $this->cycleLogger->event('search_catalog.price_semantics.resolved', [
+                'source' => $this->sourceLog($source),
+                'requested_field' => PriceSemanticRole::DiscountPercent->value,
+                'discount_source' => 'derived',
+                'current_field' => $currentField?->key,
+                'regular_field' => $regularField?->key,
+            ]);
+        }
+
         $attempts = [];
         /** @var SearchQuery|null $query */
         $query = null;
@@ -297,6 +368,7 @@ class SearchCatalogTool implements BotTool
         $startedAt = hrtime(true);
         $selectedCandidate = $searchCandidates[0] ?? ['type' => 'browse', 'text' => null, 'reason' => 'browse_all_or_empty_search_text'];
         $semanticConstraints = array_values(array_filter((array) ($arguments['constraints'] ?? []), 'is_array'));
+        $candidateTotal = null;
 
         foreach ($searchCandidates as $attemptIndex => $candidate) {
             $attemptConstraints = $candidate['type'] === 'literal' ? [] : $semanticConstraints;
@@ -304,17 +376,19 @@ class SearchCatalogTool implements BotTool
                 ...$arguments,
                 'dataset' => $dataset->slug,
                 'text' => $candidate['text'],
+                'filters' => $baseFilters,
                 'constraints' => $attemptConstraints,
             ];
-            if ($attemptConstraints !== []) {
+            if ($attemptConstraints !== [] || $derivedDiscountFilters !== []) {
                 $attemptArguments['candidate_limit'] = min(100, max(100, (int) ($arguments['limit'] ?? 10)));
             }
             ['query' => $query] = $this->queryFactory->make($bot, $attemptArguments);
             $startedAt = hrtime(true);
             $result = $this->searchService->search($context->team, $query);
-            if ($attemptConstraints !== []) {
+            $candidateTotal = $result->total;
+            if ($attemptConstraints !== [] || $derivedDiscountFilters !== []) {
                 $candidatesBefore = count($result->records);
-                $fields = $dataset->fields()->get()->mapWithKeys(fn ($field): array => [
+                $fields = $datasetFields->mapWithKeys(fn ($field): array => [
                     $field->key => [
                         'type' => $field->data_type,
                         'searchable' => (bool) $field->is_searchable,
@@ -322,13 +396,27 @@ class SearchCatalogTool implements BotTool
                     ],
                 ])->all();
                 $fields['searchable_text'] = ['type' => 'string', 'searchable' => true, 'displayable' => false];
+                if ($hasDiscountPair) {
+                    $currentField = $datasetFields->first(fn ($field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::CurrentPrice);
+                    $regularField = $datasetFields->first(fn ($field): bool => PriceSemanticRole::normalize($field->semantic_type, $field->key) === PriceSemanticRole::RegularPrice);
+                    if ($currentField !== null && $regularField !== null) {
+                        $fields[PriceSemanticRole::DiscountPercent->value] = [
+                            'type' => 'decimal',
+                            'derived_from' => [
+                                'current_price' => $currentField->key,
+                                'regular_price' => $regularField->key,
+                            ],
+                        ];
+                    }
+                }
                 $records = array_values(array_filter(
                     $result->records,
-                    fn ($record): bool => $this->recordMatcher->matchesConstraints(
-                        $this->datasetRecordValues($record),
-                        $attemptConstraints,
-                        $fields,
-                    ),
+                    function ($record) use ($attemptConstraints, $derivedDiscountFilters, $fields): bool {
+                        $values = $this->datasetRecordValues($record);
+
+                        return $this->recordMatcher->matchesConstraints($values, $attemptConstraints, $fields)
+                            && $this->recordMatcher->matches($values, $derivedDiscountFilters, $fields);
+                    },
                 ));
                 $result = new SearchResult($records, count($records));
                 $this->cycleLogger->event('search_catalog.local_constraints.matched', [
@@ -362,6 +450,40 @@ class SearchCatalogTool implements BotTool
         if ($query === null || $result === null || $formatted === null) {
             return ToolResult::failure('search_unavailable', 'The catalog search is temporarily unavailable.');
         }
+
+        $formatted['sources'] = [[
+            ...$this->sourceLog($source),
+            'count' => count($formatted['items']),
+        ]];
+        $pricing = [
+            'semantic_field' => PriceSemanticRole::CurrentPrice->value,
+            'resolved_fields' => $this->datasetPriceResolution($datasetFields),
+            'currency_consistent' => ($currency = $this->sourceCurrency($source)) === null ? null : $currency !== 'mixed',
+            'currency_conversion' => 'not_applied',
+        ];
+        $filtersComplete = $semanticConstraints === [] && $derivedDiscountFilters === []
+            || ($candidateTotal !== null && $candidateTotal <= $query->limit);
+        $formatted['execution'] = [
+            'filters' => [
+                'remote' => [],
+                'local' => $derivedDiscountFilters,
+                'unsupported' => [],
+                'indexed' => $query->filters,
+            ],
+            'constraints' => [
+                'remote' => [],
+                'local' => $semanticConstraints,
+                'unsupported' => [],
+            ],
+            'sort' => [
+                'mode' => 'indexed',
+                'global_guaranteed' => true,
+            ],
+            'complete' => $filtersComplete,
+            'filters_complete' => $filtersComplete,
+            'sort_complete' => true,
+            'more_available' => ! $filtersComplete,
+        ];
 
         if (! $context->isTest()) {
             try {
@@ -401,7 +523,10 @@ class SearchCatalogTool implements BotTool
         return ToolResult::success(
             data: [
                 'ok' => true,
-                'search' => $formatted,
+                'search' => [
+                    ...$formatted,
+                    'outcome' => count($formatted['items']) > 0 ? 'catalog_success' : 'no_results',
+                ],
             ],
             metadata: [
                 'attempts' => $attempts,
@@ -413,6 +538,7 @@ class SearchCatalogTool implements BotTool
                         $result->records,
                     ),
                 ],
+                'pricing' => $pricing,
             ],
         );
     }
@@ -429,14 +555,30 @@ class SearchCatalogTool implements BotTool
         array $sources,
         array $searchCandidates,
     ): ToolResult {
+        $pricing = $this->federatedPricing($sources);
+        if ($this->hasPriceCriteria($arguments) && $pricing['currency_consistent'] === false) {
+            return ToolResult::failure(
+                'unsupported_search_criteria',
+                'Price comparisons across these catalogs cannot be verified because their currencies differ.',
+                ['pricing' => $pricing],
+            );
+        }
+
         $items = [];
         $cardSources = [];
         $sourceResults = [];
+        $sourceProvenance = [];
+        $sourceExecutions = [];
         $sourceErrors = [];
         $attempts = [];
         $selectedQueries = [];
 
         foreach ($sources as $source) {
+            $this->cycleLogger->event('search_catalog.source.started', [
+                'source' => $this->sourceLog($source),
+                'candidate_count' => count($searchCandidates),
+            ]);
+
             try {
                 $result = ($source['type'] ?? null) === 'api_operation'
                     ? $this->executeLive($bot, $arguments, $searchCandidates, $source)
@@ -451,6 +593,23 @@ class SearchCatalogTool implements BotTool
                     ...$this->sourceLog($source),
                     'error' => 'search_unavailable',
                 ];
+                $sourceProvenance[] = [
+                    ...$this->sourceLog($source),
+                    'count' => null,
+                ];
+                $sourceExecutions[] = [
+                    'source' => $this->sourceLog($source),
+                    'complete' => false,
+                    'filters_complete' => false,
+                    'sort_complete' => false,
+                    'more_available' => true,
+                ];
+                $this->cycleLogger->event('search_catalog.source.completed', [
+                    'source' => $this->sourceLog($source),
+                    'status' => 'failed',
+                    'result_count' => null,
+                    'error' => 'search_unavailable',
+                ], 'warning');
 
                 continue;
             }
@@ -468,21 +627,55 @@ class SearchCatalogTool implements BotTool
             }
 
             if (($result->data['ok'] ?? false) !== true) {
+                $error = $result->data['error'] ?? 'search_unavailable';
                 $sourceErrors[] = [
                     ...$this->sourceLog($source),
-                    'error' => $result->data['error'] ?? 'search_unavailable',
+                    'error' => $error,
                 ];
+                $sourceProvenance[] = [
+                    ...$this->sourceLog($source),
+                    'count' => null,
+                ];
+                $sourceExecutions[] = [
+                    'source' => $this->sourceLog($source),
+                    'complete' => false,
+                    'filters_complete' => false,
+                    'sort_complete' => false,
+                    'more_available' => true,
+                ];
+                $this->cycleLogger->event('search_catalog.source.completed', [
+                    'source' => $this->sourceLog($source),
+                    'status' => 'failed',
+                    'result_count' => null,
+                    'error' => $error,
+                ], 'warning');
 
                 continue;
             }
 
             $search = $result->data['search'] ?? [];
             $sourceItems = $this->searchItems(is_array($search) ? ($search['items'] ?? null) : null);
+            $sourceItems = $this->normalizeSourceItems($sourceItems, $source);
             $sourceIdentity = ($source['type'] ?? 'source').':'.(string) ($source['id'] ?? 'unknown');
             $sourceResults[] = [
                 ...$this->sourceLog($source),
                 'count' => count($sourceItems),
             ];
+            $sourceProvenance[] = [
+                ...$this->sourceLog($source),
+                'count' => count($sourceItems),
+            ];
+            if (is_array($search['execution'] ?? null)) {
+                $sourceExecutions[] = [
+                    'source' => $this->sourceLog($source),
+                    'execution' => $search['execution'],
+                ];
+            }
+            $this->cycleLogger->event('search_catalog.source.completed', [
+                'source' => $this->sourceLog($source),
+                'status' => 'completed',
+                'result_count' => count($sourceItems),
+            ]);
             $items = [
                 ...$items,
                 ...array_map(
@@ -500,14 +693,17 @@ class SearchCatalogTool implements BotTool
             }
         }
 
+        $mergedCandidateCount = count($items);
         $items = $this->deduplicateItems($items);
+        $deduplicatedCount = count($items);
         $items = array_map(static function (array $item): array {
             unset($item['_source_identity']);
 
             return $item;
         }, $items);
+        $items = $this->sortFederatedItems($items, LiveReadQuery::fromArguments($arguments)->sorts);
 
-        if ($items === [] && $sourceErrors !== []) {
+        if ($sourceResults === [] && $sourceErrors !== []) {
             return ToolResult::failure(
                 'search_unavailable',
                 'The product catalogs could not all be checked.',
@@ -515,22 +711,276 @@ class SearchCatalogTool implements BotTool
                     'attempts' => $attempts,
                     'selected_queries' => $selectedQueries,
                     'source_errors' => $sourceErrors,
+                    'source_executions' => $sourceExecutions,
                 ],
             );
         }
 
         $limit = min(max(1, (int) ($arguments['limit'] ?? 10)), 100);
+        $items = array_slice($items, 0, $limit);
+        $outcome = $sourceErrors !== []
+            ? 'partial_success'
+            : ($items === [] ? 'no_results' : 'catalog_success');
+
+        $this->cycleLogger->event('search_catalog.merge.completed', [
+            'source_count' => count($sources),
+            'successful_source_count' => count($sourceResults),
+            'failed_source_count' => count($sourceErrors),
+            'candidate_count' => $mergedCandidateCount,
+            'deduplicated_count' => $deduplicatedCount,
+            'final_count' => count($items),
+            'outcome' => $outcome,
+            'result_limit' => $limit,
+        ]);
 
         return ToolResult::success(
-            ['ok' => true, 'search' => ['dataset' => 'catalogs', 'count' => count($items), 'items' => array_slice($items, 0, $limit)]],
+            ['ok' => true, 'search' => [
+                'dataset' => 'catalogs',
+                'count' => count($items),
+                'items' => $items,
+                'outcome' => $outcome,
+                'sources' => $sourceProvenance,
+                'execution' => $this->federatedExecution($sourceExecutions, $sourceErrors),
+                'pricing' => $pricing,
+            ]],
             [
                 'card_sources' => $cardSources,
                 'source_results' => $sourceResults,
                 'source_errors' => $sourceErrors,
+                'source_executions' => $sourceExecutions,
                 'attempts' => $attempts,
                 'selected_queries' => $selectedQueries,
+                'pricing' => $pricing,
             ],
         );
+    }
+
+    /** @param list<array<string, mixed>> $sources */
+    private function federatedPricing(array $sources): array
+    {
+        $currencies = [];
+        $resolvedFields = [];
+        foreach ($sources as $source) {
+            $currency = $this->sourceCurrency($source);
+            if ($currency !== null) {
+                $currencies[] = $currency;
+            }
+
+            $sourceKey = (string) ($source['type'] ?? 'source').':'.(string) ($source['id'] ?? 'unknown');
+            if (($source['type'] ?? null) === 'dataset' && ($source['dataset'] ?? null) instanceof Dataset) {
+                $resolvedFields[$sourceKey] = $this->datasetPriceResolution($source['dataset']->fields()->get());
+            } elseif (($source['type'] ?? null) === 'api_operation' && ($source['operation'] ?? null) instanceof RuntimeApiOperation) {
+                $resolvedFields[$sourceKey] = $this->livePriceFields($source['operation']);
+            }
+        }
+
+        $currencies = array_values(array_unique($currencies));
+
+        return [
+            'semantic_field' => PriceSemanticRole::CurrentPrice->value,
+            'resolved_fields' => $resolvedFields,
+            'currencies' => $currencies,
+            'currency_consistent' => $currencies === [] ? null : ! in_array('mixed', $currencies, true) && count($currencies) <= 1,
+            'currency_conversion' => 'not_applied',
+        ];
+    }
+
+    /** @param array<string, mixed> $arguments */
+    private function hasPriceCriteria(array $arguments): bool
+    {
+        foreach ([...(array) ($arguments['filters'] ?? []), ...(array) ($arguments['sorts'] ?? [])] as $criterion) {
+            if (is_array($criterion) && in_array(
+                $criterion['field'] ?? null,
+                [
+                    PriceSemanticRole::CurrentPrice->value,
+                    PriceSemanticRole::RegularPrice->value,
+                    PriceSemanticRole::DiscountPercent->value,
+                ],
+                true,
+            )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array<string, mixed> $source */
+    private function sourceCurrency(array $source): ?string
+    {
+        $currencies = [];
+        if (($source['type'] ?? null) === 'dataset' && ($source['dataset'] ?? null) instanceof Dataset) {
+            foreach ($source['dataset']->fields()->get() as $field) {
+                $role = PriceSemanticRole::normalize($field->semantic_type, $field->key);
+                if (! in_array($role, [PriceSemanticRole::CurrentPrice, PriceSemanticRole::RegularPrice], true)) {
+                    continue;
+                }
+
+                $currency = is_array($field->config) ? $field->config['currency'] ?? null : null;
+                if (is_string($currency) && trim($currency) !== '') {
+                    $currencies[] = strtoupper(trim($currency));
+                }
+            }
+        }
+
+        if (($source['type'] ?? null) === 'api_operation' && ($source['operation'] ?? null) instanceof RuntimeApiOperation) {
+            $mapping = $source['operation']->operation->getAttribute('response_mapping');
+            $definitions = is_array($mapping) ? ($mapping['output'] ?? data_get($mapping, 'collection.fields', [])) : [];
+            foreach ((array) $definitions as $definition) {
+                if (! is_array($definition)) {
+                    continue;
+                }
+
+                $role = PriceSemanticRole::normalize($definition['semantic_role'] ?? $definition['semantic_type'] ?? null);
+                $currency = $definition['currency'] ?? data_get($definition, 'config.currency');
+                if (in_array($role, [PriceSemanticRole::CurrentPrice, PriceSemanticRole::RegularPrice], true)
+                    && is_string($currency) && trim($currency) !== '') {
+                    $currencies[] = strtoupper(trim($currency));
+                }
+            }
+        }
+
+        $currencies = array_values(array_unique($currencies));
+
+        return count($currencies) === 1 ? $currencies[0] : (count($currencies) > 1 ? 'mixed' : null);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $sourceExecutions
+     * @param  list<array<string, mixed>>  $sourceErrors
+     * @return array<string, mixed>
+     */
+    private function federatedExecution(array $sourceExecutions, array $sourceErrors): array
+    {
+        $executions = array_values(array_filter(
+            array_map(
+                static fn (array $source): mixed => is_array($source['execution'] ?? null)
+                    ? $source['execution']
+                    : null,
+                $sourceExecutions,
+            ),
+            'is_array',
+        ));
+        $complete = $sourceErrors === [] && $executions !== [] && ! in_array(
+            false,
+            array_map(static fn (array $execution): bool => ($execution['complete'] ?? false) === true, $executions),
+            true,
+        );
+        $filtersComplete = $sourceErrors === [] && $executions !== [] && ! in_array(
+            false,
+            array_map(static fn (array $execution): bool => ($execution['filters_complete'] ?? false) === true, $executions),
+            true,
+        );
+        $sortComplete = $sourceErrors === [] && $executions !== [] && ! in_array(
+            false,
+            array_map(static fn (array $execution): bool => ($execution['sort_complete'] ?? false) === true, $executions),
+            true,
+        );
+        $moreAvailable = $sourceErrors !== [] || in_array(
+            true,
+            array_map(static fn (array $execution): bool => ($execution['more_available'] ?? false) === true, $executions),
+            true,
+        );
+        $sortModes = array_values(array_filter(array_map(
+            static fn (array $execution): mixed => data_get($execution, 'sort.mode'),
+            $executions,
+        ), 'is_string'));
+        $hasLocalSort = in_array('local_bounded', $sortModes, true) || in_array('complete_local', $sortModes, true);
+        $sortMode = $hasLocalSort
+            ? ($complete ? 'complete_local' : 'local_bounded')
+            : (in_array('remote_bounded', $sortModes, true)
+                ? 'remote_bounded'
+                : (in_array('remote_guaranteed', $sortModes, true) ? 'remote_guaranteed' : 'none'));
+        $globalSortGuaranteed = $sourceErrors === [] && $executions !== [] && ! in_array(
+            false,
+            array_map(static fn (array $execution): bool => data_get($execution, 'sort.global_guaranteed') === true, $executions),
+            true,
+        );
+        $filters = [
+            'remote' => [],
+            'local' => [],
+            'unsupported' => [],
+            'indexed' => [],
+        ];
+        $constraints = [
+            'remote' => [],
+            'local' => [],
+            'unsupported' => [],
+        ];
+
+        foreach ($executions as $execution) {
+            foreach (array_keys($filters) as $bucket) {
+                $filters[$bucket] = [
+                    ...$filters[$bucket],
+                    ...array_values(array_filter((array) data_get($execution, "filters.{$bucket}"), 'is_array')),
+                ];
+
+                if (! array_key_exists($bucket, $constraints)) {
+                    continue;
+                }
+
+                $constraints[$bucket] = [
+                    ...$constraints[$bucket],
+                    ...array_values(array_filter((array) data_get($execution, "constraints.{$bucket}"), 'is_array')),
+                ];
+            }
+        }
+
+        return [
+            'filters' => $filters,
+            'constraints' => $constraints,
+            'sort' => [
+                'mode' => $sortMode,
+                'global_guaranteed' => $globalSortGuaranteed,
+            ],
+            'complete' => $complete,
+            'filters_complete' => $filtersComplete,
+            'sort_complete' => $sortComplete,
+            'more_available' => $moreAvailable,
+        ];
+    }
+
+    /**
+     * Rank the already filtered records from all sources using the requested
+     * semantic sort. Source-level execution metadata still determines whether
+     * the ranking is globally guaranteed.
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @param  list<array<string, mixed>>  $sorts
+     * @return list<array<string, mixed>>
+     */
+    private function sortFederatedItems(array $items, array $sorts): array
+    {
+        if ($sorts === []) {
+            return $items;
+        }
+
+        $typedSorts = [];
+        foreach ($sorts as $sort) {
+            $field = (string) ($sort['field'] ?? '');
+            $direction = strtolower((string) ($sort['direction'] ?? 'asc'));
+            if ($field === '' || ! in_array($direction, ['asc', 'desc'], true)) {
+                continue;
+            }
+
+            $type = 'string';
+            foreach ($items as $item) {
+                $value = $item[$field] ?? null;
+                if (is_bool($value)) {
+                    $type = 'boolean';
+
+                    break;
+                }
+                if (is_int($value) || is_float($value) || is_string($value) && is_numeric($value)) {
+                    $type = 'decimal';
+
+                    break;
+                }
+            }
+            $typedSorts[] = ['field' => $field, 'direction' => $direction, 'type' => $type];
+        }
+
+        return $typedSorts === [] ? $items : $this->recordMatcher->sort($items, $typedSorts);
     }
 
     /**
@@ -618,6 +1068,11 @@ class SearchCatalogTool implements BotTool
             $query = LiveReadQuery::fromArguments($attemptArguments);
             $runtimeArguments = $this->liveArguments($operation->operation, $attemptArguments);
             $plan = $this->liveReadPlanner->plan($operation->operation, $query, $runtimeArguments);
+            $this->cycleLogger->event('search_catalog.price_semantics.resolved', [
+                'source' => $this->sourceLog($source),
+                'requested_fields' => $this->liveRequestedPriceFields($query),
+                'resolved_fields' => $this->livePriceResolution($query, $operation),
+            ]);
             $remoteParameter = $plan->remoteSearchParameter
                 ?? (is_string($liveMapping['search_text'] ?? null) ? $liveMapping['search_text'] : null);
 
@@ -638,6 +1093,46 @@ class SearchCatalogTool implements BotTool
                 'candidate_budget' => $plan->candidateBudget,
                 'page_budget' => $plan->pageBudget,
             ]);
+
+            $this->cycleLogger->event('search_catalog.source.plan', [
+                'source' => $this->sourceLog($source),
+                'requested_filters' => $query->filters,
+                'requested_constraints' => $query->constraints,
+                'requested_sorts' => $query->sorts,
+                'remote_filters' => $plan->remoteFilters,
+                'local_filters' => $plan->localFilters,
+                'remote_constraints' => $plan->remoteConstraints,
+                'local_constraints' => $plan->localConstraints,
+                'unsupported_filters' => $plan->unsupportedFilters,
+                'unsupported_constraints' => $plan->unsupportedConstraints,
+                'unsupported_sorts' => $plan->unsupportedSorts,
+                'remote_sorts' => $plan->remoteSorts,
+                'local_sorts' => $plan->localSorts,
+            ]);
+
+            if ($plan->unsupportedFilters !== []
+                || $plan->unsupportedConstraints !== []
+                || $plan->unsupportedSorts !== []) {
+                return ToolResult::failure(
+                    'unsupported_search_criteria',
+                    'The catalog cannot verify one or more requested search criteria.',
+                    [
+                        'attempts' => $attempts,
+                        'selected_query' => $candidate['text'],
+                        'unsupported_filters' => $plan->unsupportedFilters,
+                        'unsupported_constraints' => $plan->unsupportedConstraints,
+                        'unsupported_sorts' => $plan->unsupportedSorts,
+                        'live_read' => [
+                            'remote_filters' => $plan->remoteFilters,
+                            'local_filters' => $plan->localFilters,
+                            'unsupported_filters' => $plan->unsupportedFilters,
+                            'unsupported_constraints' => $plan->unsupportedConstraints,
+                            'unsupported_sorts' => $plan->unsupportedSorts,
+                        ],
+                    ],
+                );
+            }
+
             $result = $this->operationExecutor->executeLiveRead($operation, $plan);
             $hasNextCandidate = isset($searchCandidates[$attemptIndex + 1]);
 
@@ -664,12 +1159,29 @@ class SearchCatalogTool implements BotTool
                 );
             }
 
-            $items = $this->normalizeLiveItems((array) ($result->data['records'] ?? []));
+            $items = $this->normalizeLiveItems((array) ($result->data['records'] ?? []), $operation);
             $liveReadMeta = (array) ($result->data['meta'] ?? []);
             $liveReadMeta['remote_constraints'] = $plan->remoteConstraints;
             $liveReadMeta['local_constraints'] = $plan->localConstraints;
             $liveReadMeta['unsupported_constraints'] = $plan->unsupportedConstraints;
             $liveReadMeta['product_mapped_count'] = count($items);
+            $liveReadMeta['pricing'] = [
+                'semantic_field' => PriceSemanticRole::CurrentPrice->value,
+                'resolved_fields' => $this->livePriceResolution($query, $operation),
+                'currency_consistent' => ($currency = $this->sourceCurrency($source)) === null ? null : $currency !== 'mixed',
+                'currency_conversion' => 'not_applied',
+            ];
+            if (count($items) === 0 && ($liveReadMeta['complete'] ?? false) !== true) {
+                return ToolResult::failure(
+                    'search_incomplete',
+                    'The catalog search could not be completed within its safety limits.',
+                    [
+                        'attempts' => $attempts,
+                        'selected_query' => $candidate['text'],
+                        'live_read' => $liveReadMeta,
+                    ],
+                );
+            }
             $confirmedEmpty = count($items) === 0 && ($liveReadMeta['confirmed_empty'] ?? false) === true;
             $fallbackTriggered = $confirmedEmpty && $hasNextCandidate;
             $attempt = [
@@ -699,7 +1211,17 @@ class SearchCatalogTool implements BotTool
                 $liveReadMeta['selected_query'] = $selectedCandidate['text'];
 
                 return ToolResult::success(
-                    ['ok' => true, 'search' => ['dataset' => 'live', 'count' => count($items), 'items' => $items]],
+                    ['ok' => true, 'search' => [
+                        'dataset' => 'live',
+                        'count' => count($items),
+                        'items' => $items,
+                        'outcome' => count($items) > 0 ? 'catalog_success' : 'no_results',
+                        'execution' => $liveReadMeta['execution'] ?? [],
+                        'sources' => [[
+                            ...$this->sourceLog($source),
+                            'count' => count($items),
+                        ]],
+                    ]],
                     [
                         'attempts' => $attempts,
                         'selected_query' => $selectedCandidate['text'],
@@ -913,7 +1435,7 @@ class SearchCatalogTool implements BotTool
      * @param  array<int|string, mixed>  $data
      * @return list<array<string, mixed>>
      */
-    private function normalizeLiveItems(array $data): array
+    private function normalizeLiveItems(array $data, RuntimeApiOperation $operation): array
     {
         $items = array_is_list($data) ? $data : [];
 
@@ -933,12 +1455,16 @@ class SearchCatalogTool implements BotTool
             $items = [$data];
         }
 
-        return array_values(array_filter(array_map(function (mixed $item): ?array {
+        $priceFields = $this->livePriceFields($operation);
+
+        return array_values(array_filter(array_map(function (mixed $item) use ($priceFields): ?array {
             if (! is_array($item)) {
                 return null;
             }
 
-            return [
+            $item = $this->addSemanticPriceValues($item, $priceFields);
+
+            $mapped = [
                 'id' => $item['id'] ?? $item['external_id'] ?? null,
                 'title' => $item['title'] ?? $item['name'] ?? $item['product_name'] ?? null,
                 'subtitle' => $item['subtitle'] ?? $item['brand'] ?? $item['category'] ?? null,
@@ -951,7 +1477,150 @@ class SearchCatalogTool implements BotTool
                 'availability' => $item['availability'] ?? $item['stock'] ?? null,
                 'badge' => $item['badge'] ?? null,
             ];
+            foreach (array_keys($priceFields) as $role) {
+                if (array_key_exists($role, $item)) {
+                    $mapped[$role] = $item[$role];
+                }
+            }
+
+            foreach (['external_id', 'product_reference'] as $identityField) {
+                if (is_scalar($item[$identityField] ?? null)) {
+                    $mapped[$identityField] = (string) $item[$identityField];
+                }
+            }
+
+            return $mapped;
         }, $items), static fn (?array $item): bool => is_array($item) && is_scalar($item['title'] ?? null)));
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function normalizeFilterValues(mixed $filters): array
+    {
+        return array_values(array_map(
+            static function (mixed $filter): array {
+                if (! is_array($filter) || ($filter['operator'] ?? null) !== 'between' || ($filter['value'] ?? null) !== null) {
+                    return is_array($filter) ? $filter : [];
+                }
+
+                if (array_key_exists('minimum', $filter) && array_key_exists('maximum', $filter)) {
+                    $filter['value'] = [$filter['minimum'], $filter['maximum']];
+                }
+
+                return $filter;
+            },
+            array_values(array_filter((array) $filters, 'is_array')),
+        ));
+    }
+
+    /** @return array<string, string> */
+    private function livePriceFields(RuntimeApiOperation $operation): array
+    {
+        $roles = [];
+        foreach ($this->liveReadPlanner->fields($operation->operation) as $field => $definition) {
+            if (! is_array($definition) || ! is_string($definition['semantic_role'] ?? null)) {
+                continue;
+            }
+
+            $roles[$definition['semantic_role']] = (string) ($definition['resolved_field'] ?? $field);
+        }
+
+        return $roles;
+    }
+
+    /** @param Collection<int|string, DatasetField> $fields */
+    private function datasetPriceResolution(Collection $fields): array
+    {
+        $resolution = [];
+        foreach ($fields as $field) {
+            $role = PriceSemanticRole::normalize($field->semantic_type, $field->key);
+            if ($role instanceof PriceSemanticRole) {
+                $resolution[$role->value] = $field->key;
+            }
+        }
+
+        return $resolution;
+    }
+
+    /** @return array<string, string> */
+    private function livePriceResolution(LiveReadQuery $query, RuntimeApiOperation $operation): array
+    {
+        $fields = $this->liveReadPlanner->fields($operation->operation);
+        $resolution = [];
+        foreach ([...$query->filters, ...$query->sorts] as $request) {
+            $field = (string) ($request['field'] ?? '');
+            $definition = $fields[$field] ?? null;
+            if (! is_array($definition) || ! is_string($definition['semantic_role'] ?? null)) {
+                continue;
+            }
+
+            $resolution[$definition['semantic_role']] = (string) ($definition['resolved_field'] ?? $field);
+        }
+
+        return $resolution;
+    }
+
+    /** @return list<string> */
+    private function liveRequestedPriceFields(LiveReadQuery $query): array
+    {
+        $requested = [];
+        foreach ([...$query->filters, ...$query->sorts] as $request) {
+            $role = PriceSemanticRole::tryFrom(strtolower(trim((string) ($request['field'] ?? ''))));
+
+            if ($role instanceof PriceSemanticRole) {
+                $requested[] = $role->value;
+            }
+        }
+
+        return array_values(array_unique($requested));
+    }
+
+    /** @param array<string, string> $priceFields */
+    private function normalizeSourceItems(array $items, array $source): array
+    {
+        $priceFields = [];
+        if (($source['type'] ?? null) === 'dataset' && ($source['dataset'] ?? null) instanceof Dataset) {
+            foreach (($source['dataset']->fields()->get()) as $field) {
+                $role = PriceSemanticRole::normalize($field->semantic_type, $field->key);
+                if ($role instanceof PriceSemanticRole) {
+                    $priceFields[$role->value] = $field->key;
+                }
+            }
+        }
+
+        return array_map(
+            fn (array $item): array => $this->addSemanticPriceValues($item, $priceFields),
+            $items,
+        );
+    }
+
+    /** @param array<string, string> $priceFields */
+    private function addSemanticPriceValues(array $item, array $priceFields): array
+    {
+        foreach ($priceFields as $role => $field) {
+            if (array_key_exists($field, $item)) {
+                $item[$role] = $item[$field];
+            }
+        }
+
+        $current = $item[PriceSemanticRole::CurrentPrice->value] ?? null;
+        $regular = $item[PriceSemanticRole::RegularPrice->value] ?? null;
+        if (! array_key_exists(PriceSemanticRole::DiscountPercent->value, $item)
+            && is_scalar($current) && is_scalar($regular)
+            && is_numeric($current) && is_numeric($regular) && (float) $regular > 0) {
+            $item[PriceSemanticRole::DiscountPercent->value] = (((float) $regular - (float) $current) / (float) $regular) * 100;
+        }
+
+        if (array_key_exists(PriceSemanticRole::CurrentPrice->value, $item)) {
+            $item['price'] = $item[PriceSemanticRole::CurrentPrice->value];
+        }
+        if (array_key_exists(PriceSemanticRole::RegularPrice->value, $item)) {
+            $item['old_price'] = $item[PriceSemanticRole::RegularPrice->value];
+        }
+        if (array_key_exists(PriceSemanticRole::DiscountPercent->value, $item)) {
+            $item['discount'] = $item[PriceSemanticRole::DiscountPercent->value];
+        }
+
+        return $item;
     }
 
     /** @return array<string, mixed> */

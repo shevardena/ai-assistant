@@ -29,12 +29,15 @@ use App\Services\Speech\Contracts\SpeechToTextProvider;
 use App\Services\Speech\SpeechToTextException;
 use App\Services\Widget\BotPublicAvailabilityService;
 use App\Services\Widget\WidgetDomainValidator;
+use App\Services\Widget\WidgetImageAttachmentService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class WidgetApiController extends Controller
@@ -49,6 +52,7 @@ class WidgetApiController extends Controller
         private readonly BotPublicAvailabilityService $availability,
         private readonly SpeechToTextProvider $speechToText,
         private readonly TeamEntitlementService $entitlements,
+        private readonly WidgetImageAttachmentService $imageAttachments,
     ) {}
 
     public function session(WidgetSessionRequest $request, string $botPublicId): JsonResponse
@@ -124,14 +128,50 @@ class WidgetApiController extends Controller
 
         $this->conversationService->persistWidgetWelcomeMessage($bot, $conversation);
 
+        $attachments = [];
+        $image = $request->file('image');
+
+        if ($image instanceof UploadedFile) {
+            try {
+                $attachments[] = $this->imageAttachments->store($image);
+            } catch (\Throwable $exception) {
+                logger()->warning('conversation_attachment.received', [
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation->id,
+                    'type' => 'image',
+                    'failure_type' => 'storage',
+                    'exception' => $exception::class,
+                ]);
+
+                return response()->json([
+                    'error' => 'upload_failed',
+                    'message' => 'Image could not be uploaded.',
+                ], 422);
+            }
+
+            logger()->info('conversation_attachment.received', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation->id,
+                'type' => 'image',
+                'mime_type' => $attachments[0]['mime_type'],
+                'size' => $attachments[0]['size'],
+            ]);
+        }
+
         try {
+            $clientMessageId = $request->validated('client_message_id');
+
             $reply = $this->conversationService->sendInboundMessage(
                 $bot,
                 $conversation,
                 ChannelInboundMessage::fromWebsite(
                     (string) $conversation->external_conversation_reference,
                     (string) $visitor->public_id,
-                    (string) $request->validated('message'),
+                    (string) ($request->validated('message') ?? ''),
+                    is_string($clientMessageId)
+                        ? ['client_message_id' => $clientMessageId]
+                        : [],
+                    $attachments,
                 ),
             );
         } catch (AiException $exception) {
@@ -143,10 +183,12 @@ class WidgetApiController extends Controller
             ]);
 
             return response()->json([
-                'error' => 'unavailable',
-                'message' => app()->environment('local')
+                'error' => $attachments === [] ? 'unavailable' : 'vision_unavailable',
+                'message' => $attachments !== []
+                    ? 'I couldn\'t analyze that image right now.'
+                    : (app()->environment('local')
                     ? $exception->getMessage()
-                    : ($bot->fallback_message ?: 'Something went wrong. Please try again.'),
+                    : ($bot->fallback_message ?: 'Something went wrong. Please try again.')),
             ], 503);
         }
 
@@ -157,11 +199,45 @@ class WidgetApiController extends Controller
             'handoff_status' => $reply->conversation->handoff_status->value,
             'next_after_message_id' => $this->conversationService->publicMessages($reply->conversation)->last()?->getKey(),
             'message' => [
-                ...$this->messagePayload($reply->assistantMessage),
+                ...$this->messagePayload($reply->assistantMessage, $reply->conversation),
                 'blocks' => $outbound->blocks,
                 'cards' => $outbound->cards,
             ],
-            'user_message' => $this->messagePayload($reply->userMessage),
+            'user_message' => $this->messagePayload($reply->userMessage, $reply->conversation),
+        ]);
+    }
+
+    public function attachment(Request $request, string $botPublicId, Message $message): StreamedResponse
+    {
+        $bot = Bot::query()->where('public_id', $botPublicId)->firstOrFail();
+        $conversationId = $request->query('conversation_id');
+        $visitorId = $request->query('visitor_id');
+
+        abort_unless(is_string($conversationId) && is_string($visitorId), 404);
+
+        $conversation = $bot->conversations()
+            ->where('public_id', $conversationId)
+            ->whereHas('visitor', fn ($query) => $query->where('public_id', $visitorId))
+            ->firstOrFail();
+
+        abort_unless((int) $message->conversation_id === (int) $conversation->id, 404);
+
+        $attachment = collect((array) data_get($message->metadata, 'attachments', []))
+            ->first(static fn (mixed $item): bool => is_array($item) && ($item['type'] ?? null) === 'image');
+
+        abort_unless(is_array($attachment), 404);
+        $stream = $this->imageAttachments->stream($attachment);
+        $mimeType = is_string($attachment['mime_type'] ?? null)
+            ? $attachment['mime_type']
+            : 'application/octet-stream';
+
+        return response()->stream(function () use ($stream): void {
+            fpassthru($stream);
+            fclose($stream);
+        }, 200, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline',
+            'Cache-Control' => 'private, max-age=3600',
         ]);
     }
 
@@ -304,9 +380,9 @@ class WidgetApiController extends Controller
         return response()->json([
             'conversation_id' => $reply->conversation->public_id,
             'form_block' => $reply->formBlock,
-            'user_message' => $this->messagePayload($reply->userMessage),
+            'user_message' => $this->messagePayload($reply->userMessage, $reply->conversation),
             'message' => [
-                ...$this->messagePayload($reply->assistantMessage),
+                ...$this->messagePayload($reply->assistantMessage, $reply->conversation),
                 'blocks' => $outbound->blocks,
                 'cards' => $outbound->cards,
             ],
@@ -355,7 +431,7 @@ class WidgetApiController extends Controller
         return response()->json([
             'conversation_id' => $reply->conversation->public_id,
             'appointment_block' => $reply->appointmentBlock,
-            'user_message' => $this->messagePayload($reply->userMessage),
+            'user_message' => $this->messagePayload($reply->userMessage, $reply->conversation),
             'message' => [
                 ...$this->messagePayload($reply->assistantMessage),
                 'blocks' => $outbound->blocks,
@@ -466,30 +542,37 @@ class WidgetApiController extends Controller
 
     /**
      * @param  Collection<int, Message>|null  $messages
-     * @return list<array{role: string, content: string|null, source: string|null, sender: string|null, blocks: list<array<string, mixed>>, cards: list<array<string, mixed>>}>
+     * @return list<array{id: int, role: string, content: string|null, created_at: string|null, source: string|null, sender: string|null, blocks: list<array<string, mixed>>, cards: list<array<string, mixed>>}>
      */
     private function messages(Conversation $conversation, ?Collection $messages = null): array
     {
         $messages ??= $this->conversationService->publicMessages($conversation);
 
         return array_values($messages
-            ->map(fn (Message $message): array => $this->messagePayload($message))
+            ->map(fn (Message $message): array => $this->messagePayload($message, $conversation))
             ->all());
     }
 
     /**
      * Expose only the public shape of a message. Handoff metadata stays server-side.
      *
-     * @return array{role: string, content: string|null, source: string|null, sender: string|null, blocks: list<array<string, mixed>>, cards: list<array<string, mixed>>}
+     * @return array{id: int, role: string, content: string|null, created_at: string|null, source: string|null, sender: string|null, blocks: list<array<string, mixed>>, cards: list<array<string, mixed>>}
      */
-    private function messagePayload(Message $message): array
+    private function messagePayload(Message $message, ?Conversation $conversation = null): array
     {
         $source = data_get($message->metadata, 'source');
         $isHuman = $source === 'human_agent';
         $isSystem = $message->role === 'system';
         $blocks = $isHuman || $isSystem ? [] : $this->conversationService->messageBlocks($message);
 
+        $payloadConversation = $conversation ?? $message->conversation;
+        $attachment = $payloadConversation instanceof Conversation
+            && data_get($message->metadata, 'attachments') !== null
+            ? $this->imageAttachments->publicPayload($message, $payloadConversation)
+            : null;
+
         return [
+            'id' => (int) $message->getKey(),
             'role' => (string) $message->role,
             'content' => $message->content === null ? null : (string) $message->content,
             'created_at' => $message->created_at?->toIso8601String(),
@@ -497,6 +580,7 @@ class WidgetApiController extends Controller
             'sender' => $isHuman ? 'Support Team' : null,
             'blocks' => $blocks,
             'cards' => $isHuman || $isSystem ? [] : $this->cardsFromBlocks($blocks),
+            'attachments' => $attachment === null ? [] : [$attachment],
         ];
     }
 

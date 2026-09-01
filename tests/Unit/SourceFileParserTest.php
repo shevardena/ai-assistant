@@ -41,6 +41,20 @@ test('parses CSV headers, quoted commas, and skips empty rows', function () {
     ]);
 });
 
+test('treats dotted CSV headers as literal source fields', function () {
+    Storage::fake('local');
+    Storage::disk('local')->put(
+        'imports/products.csv',
+        "id,ნომენკლატურა.ჯგუფი\nsku-1,ბამპერი\n",
+    );
+
+    $rows = iterator_to_array((new CsvFileParser)->rows(parserSourceFile('imports/products.csv', 'products.csv')));
+
+    expect($rows)->toBe([
+        ['id' => 'sku-1', 'ნომენკლატურა.ჯგუფი' => 'ბამპერი'],
+    ]);
+});
+
 test('parses top-level JSON arrays and rejects unsupported roots', function () {
     Storage::fake('local');
     Storage::disk('local')->put('imports/products.json', json_encode([

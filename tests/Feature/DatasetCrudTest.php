@@ -4,6 +4,7 @@ use App\Enums\TeamRole;
 use App\Models\Dataset;
 use App\Models\DatasetField;
 use App\Models\DataSource;
+use App\Models\SourceRun;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -163,6 +164,31 @@ test('users can view and edit a dataset from their current team', function () {
     $user->switchTeam($team);
     $dataset = makeTeamDataset($team, makeTeamDataSource($team));
     DatasetField::factory()->create(['dataset_id' => $dataset->id]);
+    SourceRun::factory()->create([
+        'data_source_id' => $dataset->data_source_id,
+        'dataset_id' => $dataset->id,
+        'status' => 'validation_failed',
+        'rows_read' => 37,
+        'rows_failed' => 37,
+        'error' => 'No valid records were imported. Review the import diagnostics.',
+        'metadata' => [
+            'error_summary' => [
+                'total_errors' => 37,
+                'error_types' => ['invalid_integer' => 37],
+                'samples' => [[
+                    'row' => 2,
+                    'field' => 'discount_percent',
+                    'stage' => 'normalization',
+                    'source_field' => 'ფასდაკლების %',
+                    'mapped_key' => 'discount_percent',
+                    'raw_value' => '-30%',
+                    'normalized_value' => null,
+                    'error_code' => 'invalid_integer',
+                    'message' => 'The field must contain an integer.',
+                ]],
+            ],
+        ],
+    ]);
 
     $this->actingAs($user)
         ->get(route('datasets.show', ['current_team' => $team->slug, 'dataset' => $dataset]))
@@ -170,7 +196,10 @@ test('users can view and edit a dataset from their current team', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('datasets/show')
             ->where('dataset.id', $dataset->id)
-            ->has('dataset.fields', 1),
+            ->has('dataset.fields', 1)
+            ->where('dataset.sourceRuns.0.status', 'validation_failed')
+            ->where('dataset.sourceRuns.0.errorSummary.totalErrors', 37)
+            ->where('dataset.sourceRuns.0.errorSummary.samples.0.source_field', 'ფასდაკლების %'),
         );
 
     $this->actingAs($user)

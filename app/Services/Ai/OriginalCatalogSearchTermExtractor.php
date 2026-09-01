@@ -8,12 +8,12 @@ final class OriginalCatalogSearchTermExtractor
 {
     /** @var list<string> */
     private const STOP_WORDS = [
-        'a', 'an', 'anything', 'available', 'can', 'could', 'do', 'find', 'have', 'hello', 'hi',
+        'a', 'an', 'anything', 'available', 'any', 'can', 'could', 'do', 'du', 'find', 'have', 'hello', 'hi',
         'i', 'items', 'me', 'parts', 'please', 'product', 'products', 'search', 'show', 'the',
-        'want', 'you', 'for', 'year', 'years',
-        'არის', 'არსებობს', 'გაქვთ', 'მაჩვენე', 'მაჩვენოთ', 'ნაწილი', 'ნაწილები', 'პროდუქტი',
+        'want', 'you', 'for', 'u', 'under', 'year', 'years',
+        'არის', 'არსებობს', 'გაქვს', 'გაქვთ', 'მაჩვენე', 'მაჩვენოთ', 'ნაწილი', 'ნაწილები', 'პროდუქტი',
         'პროდუქტები', 'პროდუქცია', 'პრიდუქცია', 'რამე', 'სალამი', 'შეგიძლიათ', 'წელი', 'წლის', 'წლიან', 'წლიანი',
-        'есть', 'запчасти', 'покажи', 'покажите', 'привет', 'части',
+        'რა', 'есть', 'запчасти', 'покажи', 'покажите', 'привет', 'части',
     ];
 
     public function extract(?string $message): ?string
@@ -21,6 +21,17 @@ final class OriginalCatalogSearchTermExtractor
         if (! is_string($message) || trim($message) === '') {
             return null;
         }
+
+        $message = preg_replace(
+            '/(?<![\p{L}\p{N}])(?:under|below|less\s+than|up\s+to|at\s+most|over|above|more\s+than|at\s+least)\s+[$€£]?\d+(?:[.,]\d+)?(?![\p{L}\p{N}])/iu',
+            ' ',
+            $message,
+        ) ?? $message;
+        $message = preg_replace(
+            '/(?<![\p{L}\p{N}])\d+(?:[.,]\d+)?\s*ლარ(?:ამდე|ში|ად|ი)?(?![\p{L}\p{N}])/iu',
+            ' ',
+            $message,
+        ) ?? $message;
 
         preg_match_all('/[\p{L}\p{N}][\p{L}\p{N}_.-]*/u', $message, $matches);
         $tokens = [];

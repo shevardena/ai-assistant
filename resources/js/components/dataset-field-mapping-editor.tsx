@@ -69,6 +69,7 @@ const fieldTypes: DatasetFieldDataType[] = [
 ];
 
 const normalizers = ['lowercase', 'percentage', 'currency', 'gb'] as const;
+const priceSemanticRoles = ['current_price', 'regular_price', 'discount_percent'] as const;
 
 const quickFilters: Array<{ value: QuickFilter; label: string }> = [
     { value: 'all', label: 'All' },
@@ -84,6 +85,14 @@ function normalizePath(path: string | null): string {
 
 function rowKey(row: MappingRow): string {
     return row.id === null ? `new:${row.sourcePath}` : `saved:${row.id}`;
+}
+
+function compatiblePriceRoles(dataType: DatasetFieldDataType): string[] {
+    return dataType === 'decimal'
+        ? [...priceSemanticRoles]
+        : dataType === 'integer'
+            ? ['discount_percent']
+            : [];
 }
 
 function rowFromField(
@@ -830,6 +839,22 @@ function AdvancedFields({
                     className="h-8 rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
                 <InputError message={error('semantic_type')} />
+            </label>
+            <label className="grid gap-1 text-xs text-muted-foreground">
+                Price semantic role
+                <select
+                    value={compatiblePriceRoles(row.dataType).includes(row.semanticType ?? '') ? row.semanticType ?? '' : ''}
+                    onChange={(event) =>
+                        onChange({ semanticType: event.target.value || null })
+                    }
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                    <option value="">None</option>
+                    {compatiblePriceRoles(row.dataType).map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                    ))}
+                </select>
+                <span className="text-[11px]">Use a numeric field for current, regular, or discount pricing.</span>
             </label>
             <label className="grid gap-1 text-xs text-muted-foreground">
                 Normalizer

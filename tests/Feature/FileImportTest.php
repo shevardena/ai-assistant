@@ -9,6 +9,7 @@ use App\Models\SourceRun;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Typesense\TypesenseDatasetIndexer;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -47,6 +48,13 @@ function importSourceFile(User $user, DataSource $dataSource, string $path, stri
 
 function importFields(Dataset $dataset): void
 {
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'source_path' => 'id',
+        'key' => 'id',
+        'data_type' => 'string',
+        'position' => 0,
+    ]);
     DatasetField::factory()->create([
         'dataset_id' => $dataset->id,
         'source_path' => 'title',
@@ -93,7 +101,7 @@ test('imports mapped CSV rows into canonical dataset records', function () {
         ->and($run->rows_written)->toBe(2)
         ->and($run->rows_failed)->toBe(0)
         ->and($records)->toHaveCount(2)
-        ->and($records[0]->payload)->toBe(['name' => 'Phone', 'price' => 3499.0])
+        ->and($records[0]->payload)->toBe(['id' => 'sku-1', 'name' => 'Phone', 'price' => 3499.0])
         ->and($records[0]->payload)->not->toHaveKey('secret')
         ->and($records[0]->dataset_id)->toBe($dataset->id)
         ->and($dataSource->fresh()->status)->toBe('ready')
@@ -102,8 +110,95 @@ test('imports mapped CSV rows into canonical dataset records', function () {
         ->and($sourceFile->fresh()->status)->toBe('ready');
 });
 
+test('resolves a mapped canonical primary key from a literal Georgian CSV header', function () {
+    Storage::fake('local');
+    [$user, $team, $dataSource, $dataset] = importContext();
+    $dataset->update(['primary_key_path' => 'group']);
+    DatasetField::factory()->createMany([
+        [
+            'dataset_id' => $dataset->id,
+            'source_path' => 'ნომენკლატურა.ჯგუფი',
+            'key' => 'group',
+            'data_type' => 'string',
+            'position' => 0,
+        ],
+        [
+            'dataset_id' => $dataset->id,
+            'source_path' => 'საცალო ფასი',
+            'key' => 'price',
+            'data_type' => 'integer',
+            'position' => 1,
+        ],
+        [
+            'dataset_id' => $dataset->id,
+            'source_path' => 'აქციის ფასი',
+            'key' => 'promo_price',
+            'data_type' => 'integer',
+            'position' => 2,
+        ],
+        [
+            'dataset_id' => $dataset->id,
+            'source_path' => 'ფასდაკლების %',
+            'key' => 'sale_percent',
+            'data_type' => 'string',
+            'position' => 3,
+        ],
+    ]);
+    $sourceFile = importSourceFile(
+        $user,
+        $dataSource,
+        "source-files/{$team->id}/{$dataSource->id}/products.csv",
+        "ნომენკლატურა.ჯგუფი,საცალო ფასი,აქციის ფასი,ფასდაკლების %\nB1754FN,999,699,-30%\nB5RCNE565HXPMG,2999,2099,-30%\nB5RCNK363ZXBR,2299,1599,-30%\n",
+    );
+
+    $this->actingAs($user)->post(route('datasets.imports.store', [
+        'current_team' => $team->slug,
+        'dataset' => $dataset,
+    ]), ['source_file_id' => $sourceFile->id])->assertRedirect();
+
+    $run = SourceRun::query()->firstOrFail();
+    $record = DatasetRecord::query()->where('external_id', 'B1754FN')->firstOrFail();
+
+    expect($run->status)->toBe('completed')
+        ->and($run->rows_read)->toBe(3)
+        ->and($run->rows_written)->toBe(3)
+        ->and($run->rows_failed)->toBe(0)
+        ->and($record->payload)->toBe([
+            'group' => 'B1754FN',
+            'price' => 999,
+            'promo_price' => 699,
+            'sale_percent' => '-30%',
+        ])
+        ->and($record->external_id)->toBe('B1754FN');
+});
+
+test('blocks an import when the configured canonical primary key is not mapped', function () {
+    Storage::fake('local');
+    [$user, $team, $dataSource, $dataset] = importContext();
+    $dataset->update(['primary_key_path' => 'group']);
+    importFields($dataset);
+    $sourceFile = importSourceFile(
+        $user,
+        $dataSource,
+        "source-files/{$team->id}/{$dataSource->id}/products.csv",
+        "id,title,price\nsku-1,Phone,10\n",
+    );
+
+    $this->actingAs($user)->post(route('datasets.imports.store', [
+        'current_team' => $team->slug,
+        'dataset' => $dataset,
+    ]), ['source_file_id' => $sourceFile->id])
+        ->assertSessionHasErrors([
+            'source_file_id' => 'The primary key field [group] is not mapped.',
+        ]);
+
+    expect(SourceRun::query()->count())->toBe(0)
+        ->and(DatasetRecord::query()->count())->toBe(0);
+});
+
 test('continues after invalid rows and stores structured row errors', function () {
     Storage::fake('local');
+    Log::fake();
     [$user, $team, $dataSource, $dataset] = importContext();
     importFields($dataset);
     DatasetField::factory()->create([
@@ -127,12 +222,64 @@ test('continues after invalid rows and stores structured row errors', function (
 
     $run = SourceRun::query()->firstOrFail();
 
-    expect($run->status)->toBe('completed')
+    expect($run->status)->toBe('partial')
         ->and($run->rows_read)->toBe(2)
         ->and($run->rows_written)->toBe(1)
         ->and($run->rows_failed)->toBe(1)
         ->and($run->metadata['row_errors'][0]['row'])->toBe(2)
+        ->and($run->metadata['error_summary']['total_errors'])->toBe(1)
+        ->and($run->metadata['error_summary']['error_types'])->toBe(['invalid_integer' => 1])
+        ->and($run->metadata['error_summary']['samples'][0])->toMatchArray([
+            'row' => 2,
+            'source_field' => 'quantity',
+            'mapped_key' => 'quantity',
+            'raw_value' => 'nope',
+            'error_code' => 'invalid_integer',
+        ])
         ->and(DatasetRecord::query()->count())->toBe(1);
+
+    Log::assertLogged('dataset_import.row_failed', function (string $level, string $message, array $context): bool {
+        return $context['error_code'] === 'invalid_integer'
+            && $context['raw_value'] === 'nope'
+            && $context['source_field'] === 'quantity';
+    });
+});
+
+test('marks an import validation_failed when every row is invalid', function () {
+    Storage::fake('local');
+    [$user, $team, $dataSource, $dataset] = importContext();
+    importFields($dataset);
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'source_path' => 'quantity',
+        'key' => 'quantity',
+        'data_type' => 'integer',
+        'position' => 3,
+    ]);
+    $sourceFile = importSourceFile(
+        $user,
+        $dataSource,
+        "source-files/{$team->id}/{$dataSource->id}/products.csv",
+        "id,title,price,quantity\nsku-1,Phone,3499.00,nope\nsku-2,Tablet,999.50,also-nope\n",
+    );
+
+    $this->actingAs($user)->post(route('datasets.imports.store', [
+        'current_team' => $team->slug,
+        'dataset' => $dataset,
+    ]), ['source_file_id' => $sourceFile->id])->assertRedirect();
+
+    $run = SourceRun::query()->firstOrFail();
+
+    expect($run->status)->toBe('validation_failed')
+        ->and($run->rows_read)->toBe(2)
+        ->and($run->rows_written)->toBe(0)
+        ->and($run->rows_failed)->toBe(2)
+        ->and($run->error)->toBe('No valid records were imported. Review the import diagnostics.')
+        ->and($run->metadata['error_summary']['total_errors'])->toBe(2)
+        ->and($run->metadata['error_summary']['error_types'])->toBe(['invalid_integer' => 2])
+        ->and($sourceFile->fresh()->status)->toBe('failed')
+        ->and($dataSource->fresh()->status)->toBe('error')
+        ->and($dataset->fresh()->status)->toBe('error');
 });
 
 test('a Typesense sync failure does not change authoritative ready status', function () {
@@ -183,6 +330,7 @@ test('re-imports upsert by the configured primary key instead of duplicating rec
 
     expect(DatasetRecord::query()->count())->toBe(1)
         ->and(DatasetRecord::query()->firstOrFail()->payload)->toBe([
+            'id' => 'sku-1',
             'name' => 'Updated Phone',
             'price' => 125.0,
         ])
@@ -211,6 +359,7 @@ test('imports top-level JSON arrays', function () {
     ]), ['source_file_id' => $sourceFile->id])->assertRedirect();
 
     expect(DatasetRecord::query()->firstOrFail()->payload)->toBe([
+        'id' => 'sku-1',
         'name' => 'Phone',
         'price' => 10.5,
     ]);

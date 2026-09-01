@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\PriceSemanticRole;
 use App\Models\Dataset;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -110,6 +111,28 @@ class UpdateDatasetFieldsRequest extends FormRequest
 
                 if (count($sourcePaths) !== count(array_unique($sourcePaths))) {
                     $validator->errors()->add('fields', 'Source paths must be unique within this dataset.');
+                }
+
+                $roles = [];
+                foreach ($fields as $index => $field) {
+                    if (! is_array($field) || ! ($field['included'] ?? false)) {
+                        continue;
+                    }
+
+                    $role = PriceSemanticRole::normalize($field['semantic_type'] ?? null, $field['key'] ?? null);
+                    if (! $role instanceof PriceSemanticRole) {
+                        continue;
+                    }
+
+                    if (! $role->supportsType((string) ($field['data_type'] ?? 'string'))) {
+                        $validator->errors()->add("fields.{$index}.semantic_type", 'Semantic price roles require a compatible numeric field type.');
+                    }
+
+                    if (isset($roles[$role->value])) {
+                        $validator->errors()->add('fields', "Only one field may use the [{$role->value}] semantic role.");
+                    }
+
+                    $roles[$role->value] = true;
                 }
             },
         ];

@@ -139,9 +139,6 @@ class RestApiRequestExecutor
             logger()->info('REST API request started.', $requestLog);
             $this->cycleLogger?->apiRequest([
                 ...$requestLog,
-                'url' => $url,
-                'query' => $query,
-                'body' => $payload,
                 'request_method' => Str::upper($method),
             ]);
 
@@ -152,7 +149,7 @@ class RestApiRequestExecutor
                 'operation' => $operation->key,
                 'source_id' => $dataSource->id,
                 'method' => Str::upper($method),
-                'url' => $url,
+                'url' => $this->debugUrl($url),
                 'status' => null,
                 'exception' => $exception::class,
             ], 'warning');
@@ -177,7 +174,7 @@ class RestApiRequestExecutor
                 'operation' => $operation->key,
                 'source_id' => $dataSource->id,
                 'method' => Str::upper($method),
-                'url' => $url,
+                'url' => $this->debugUrl($url),
                 'status' => $status,
                 'exception' => $exception::class,
             ], 'warning');

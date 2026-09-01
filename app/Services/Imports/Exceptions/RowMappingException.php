@@ -7,7 +7,16 @@ use RuntimeException;
 class RowMappingException extends RuntimeException
 {
     /**
-     * @param  list<array{field: string, message: string}>  $errors
+     * @param  list<array{
+     *     field: string,
+     *     stage: string,
+     *     source_field: string|null,
+     *     mapped_key: string|null,
+     *     raw_value: scalar|null,
+     *     normalized_value: scalar|null,
+     *     error_code: string,
+     *     message: string,
+     * }>  $errors
      */
     public function __construct(
         public readonly array $errors,

@@ -2,12 +2,14 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\PriceSemanticRole;
 use App\Models\Dataset;
 use App\Models\DatasetField;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 use JsonException;
 
 class StoreDatasetFieldRequest extends FormRequest
@@ -52,6 +54,19 @@ class StoreDatasetFieldRequest extends FormRequest
             'config' => ['nullable', 'array'],
             'position' => ['required', 'integer', 'min:0'],
         ];
+    }
+
+    /** @return array<int, callable(Validator): void> */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            $role = PriceSemanticRole::normalize($this->input('semantic_type'), $this->input('key'));
+            $type = (string) $this->input('data_type', 'string');
+
+            if ($role instanceof PriceSemanticRole && ! $role->supportsType($type)) {
+                $validator->errors()->add('semantic_type', 'Semantic price roles require a compatible numeric field type.');
+            }
+        }];
     }
 
     protected function prepareForValidation(): void

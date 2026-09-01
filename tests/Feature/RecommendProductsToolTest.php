@@ -127,13 +127,35 @@ test('recommend_products has a strict bounded schema', function () {
         'name' => 'recommend_products',
         'strict' => true,
     ])
-        ->and($schema['parameters']['required'])->toBe(['query'])
+        ->and($schema['parameters']['required'])->toBe(['query', 'limit'])
         ->and($schema['parameters']['additionalProperties'])->toBeFalse()
         ->and($schema['parameters']['properties']['limit'])->toMatchArray([
-            'type' => 'integer',
+            'type' => ['integer', 'null'],
             'minimum' => 1,
             'maximum' => 10,
         ]);
+});
+
+test('all catalog tools sent with recommend_products satisfy strict object requirements', function () {
+    [, , $bot] = recommendProductsContext();
+
+    foreach (app(BotToolRegistry::class)->forBot($bot) as $tool) {
+        $definition = app(AiToolSchemaBuilder::class)->build($tool, $bot);
+
+        expect($definition['strict'])->toBeTrue();
+        assertStrictAiObjectSchema($definition['parameters'], $tool->name());
+    }
+});
+
+test('recommend_products accepts a required null limit and applies the normal runtime default', function () {
+    [, , $bot] = recommendProductsContext();
+
+    $result = executeRecommendation($bot, [
+        'query' => 'laptop',
+        'limit' => null,
+    ]);
+
+    expect($result->data['recommendations'])->toHaveCount(2);
 });
 
 test('recommend_products returns real authorized candidates with safe references and fields', function () {
@@ -299,6 +321,11 @@ test('the generic runtime dispatches recommend_products without a tool-specific 
 
     expect($response->answer)->toBe('I recommend the Creator Laptop.')
         ->and($response->toolCallsCount)->toBe(1)
+        ->and(collect($fake->payloads[0]['tools'])->contains(
+            fn (array $tool): bool => ($tool['name'] ?? null) === 'recommend_products'
+                && ($tool['strict'] ?? false) === true
+                && ($tool['parameters']['required'] ?? []) === ['query', 'limit'],
+        ))->toBeTrue()
         ->and(json_decode($functionOutput['output'], true, 512, JSON_THROW_ON_ERROR)['recommendations'][0]['product_reference'])
         ->toBe('sku-laptop-2');
 });

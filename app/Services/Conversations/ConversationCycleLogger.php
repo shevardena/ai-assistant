@@ -176,10 +176,11 @@ final class ConversationCycleLogger
         if (is_array($searchOutcome)) {
             $groundingSource = 'search_catalog';
             $answerReason = match ($searchOutcome['outcome']) {
-                'knowledge_success' => $liveCatalog ? 'live_catalog_results' : 'catalog_results',
-                'no_results' => $liveCatalog ? 'live_catalog_empty' : 'catalog_empty',
-                'non_knowledge_failure' => $liveCatalog ? 'live_catalog_error' : 'catalog_error',
-                default => $liveCatalog ? 'live_catalog_invalid_request' : 'catalog_invalid_request',
+                'catalog_success' => 'catalog_results',
+                'partial_success' => 'catalog_partial',
+                'no_results' => 'catalog_empty',
+                'failed' => 'catalog_error',
+                default => 'catalog_invalid_request',
             };
         } elseif ($liveCatalog && $this->looksLikeUnsupportedCatalogClaim($response->answer)) {
             $answerReason = 'unsupported_model_answer';

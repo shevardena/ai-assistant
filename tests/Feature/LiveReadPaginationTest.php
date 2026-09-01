@@ -82,6 +82,88 @@ test('follows REST page pagination until an exact count is satisfied', function 
     Http::assertSent(fn ($request) => $request->url() === 'https://live.example.test/records?page=2');
 });
 
+test('applies a local price filter before the final result limit', function () {
+    Http::fake(['https://live.example.test/*' => Http::response(['data' => [
+        ['id' => 1, 'name' => 'Camry A', 'price' => '160.00'],
+        ['id' => 2, 'name' => 'Camry B', 'price' => '220.00'],
+        ['id' => 3, 'name' => 'Camry C', 'price' => '45.00'],
+    ]])]);
+    $runtime = liveReadRuntimeContext(liveCollectionMapping());
+    $runtime->operation->update(['request_mapping' => [
+        'path' => [],
+        'query' => [],
+        'body' => [],
+        'live_query' => ['search_text' => 'name'],
+    ]]);
+
+    $result = app(RuntimeApiOperationExecutor::class)->executeLiveRead($runtime, liveReadPlan($runtime, [
+        'text' => 'Camry',
+        'filters' => [['field' => 'price', 'operator' => 'lte', 'value' => 200]],
+        'result_count' => ['mode' => 'exact', 'value' => 2],
+    ]));
+
+    expect($result->success)->toBeTrue()
+        ->and(array_column($result->data['records'], 'id'))->toBe([1, 3])
+        ->and($result->data['meta']['matcher_input_count'])->toBe(3)
+        ->and($result->data['meta']['matcher_output_count'])->toBe(2);
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://live.example.test/records?name=Camry');
+});
+
+test('pushes a configured remote price filter without assuming its parameter name', function () {
+    Http::fake(['https://live.example.test/*' => Http::response(['data' => [
+        ['id' => 1, 'name' => 'Camry A', 'price' => '160.00'],
+    ]])]);
+    $runtime = liveReadRuntimeContext(liveCollectionMapping());
+    $runtime->operation->update(['request_mapping' => [
+        'path' => [],
+        'query' => [],
+        'body' => [],
+        'live_query' => [
+            'search_text' => 'name',
+            'filters' => ['price' => ['lte' => 'max_amount']],
+        ],
+    ]]);
+
+    $result = app(RuntimeApiOperationExecutor::class)->executeLiveRead($runtime, liveReadPlan($runtime, [
+        'text' => 'Camry',
+        'filters' => [['field' => 'price', 'operator' => 'lte', 'value' => 200]],
+        'result_count' => ['mode' => 'exact', 'value' => 1],
+    ]));
+
+    expect($result->success)->toBeTrue()->and($result->data['meta']['local_filters'])->toBe([]);
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'name=Camry')
+        && str_contains($request->url(), 'max_amount=200'));
+});
+
+test('continues pagination until enough records remain after local filtering', function () {
+    Http::fakeSequence('https://live.example.test/*')
+        ->push(['data' => array_map(
+            static fn (int $id): array => ['id' => $id, 'price' => $id === 1 ? 100 : 220],
+            range(1, 10),
+        ), 'meta' => ['current_page' => 1, 'last_page' => 2]])
+        ->push(['data' => array_map(
+            static fn (int $id): array => ['id' => $id, 'price' => $id < 15 ? 100 : 220],
+            range(11, 20),
+        ), 'meta' => ['current_page' => 2, 'last_page' => 2]]);
+    $runtime = liveReadRuntimeContext(liveCollectionMapping([
+        'type' => 'page',
+        'parameter' => 'page',
+        'current_path' => 'meta.current_page',
+        'last_path' => 'meta.last_page',
+    ]));
+
+    $result = app(RuntimeApiOperationExecutor::class)->executeLiveRead($runtime, liveReadPlan($runtime, [
+        'filters' => [['field' => 'price', 'operator' => 'lte', 'value' => 200]],
+        'result_count' => ['mode' => 'exact', 'value' => 5],
+    ]));
+
+    expect($result->success)->toBeTrue()
+        ->and($result->data['records'])->toHaveCount(5)
+        ->and($result->data['meta']['pages_fetched'])->toBe(2)
+        ->and($result->data['meta']['complete'])->toBeTrue();
+    Http::assertSentCount(2);
+});
+
 test('follows a saved REST next URL and deduplicates records', function () {
     Http::fakeSequence('https://live.example.test/*')
         ->push(['data' => [['id' => 1], ['id' => 2]], 'next_page_url' => 'https://live.example.test/records?page=2'])
@@ -102,8 +184,38 @@ test('globally sorts local results across all pages', function () {
 
     $result = app(RuntimeApiOperationExecutor::class)->executeLiveRead($runtime, liveReadPlan($runtime, ['sorts' => [['field' => 'price', 'direction' => 'asc']], 'result_count' => ['mode' => 'exact', 'value' => 3]]));
 
-    expect(array_column($result->data['records'], 'price'))->toBe([10, 20, 30]);
+    expect(array_column($result->data['records'], 'price'))->toBe([10, 20, 30])
+        ->and($result->data['meta']['sort_mode'])->toBe('complete_local')
+        ->and($result->data['meta']['global_sort_guaranteed'])->toBeTrue();
     Http::assertSentCount(2);
+});
+
+test('marks local sorting as bounded when the page budget prevents an exhaustive scan', function () {
+    Config::set('live-read.max_pages', 1);
+    Http::fake(['https://live.example.test/*' => Http::response([
+        'data' => [
+            ['id' => 1, 'price' => 220],
+            ['id' => 2, 'price' => 45],
+            ['id' => 3, 'price' => 160],
+        ],
+        'meta' => ['current_page' => 1, 'last_page' => 2],
+    ])]);
+    $runtime = liveReadRuntimeContext(liveCollectionMapping([
+        'type' => 'page',
+        'parameter' => 'page',
+        'current_path' => 'meta.current_page',
+        'last_path' => 'meta.last_page',
+    ]));
+
+    $result = app(RuntimeApiOperationExecutor::class)->executeLiveRead($runtime, liveReadPlan($runtime, [
+        'sorts' => [['field' => 'price', 'direction' => 'asc']],
+        'result_count' => ['mode' => 'exact', 'value' => 3],
+    ]));
+
+    expect(array_column($result->data['records'], 'price'))->toBe([45, 160, 220])
+        ->and($result->data['meta']['sort_mode'])->toBe('local_bounded')
+        ->and($result->data['meta']['global_sort_guaranteed'])->toBeFalse()
+        ->and($result->data['meta']['sort_complete'])->toBeFalse();
 });
 
 test('distinguishes confirmed empty from incomplete empty and preserves partial failures', function () {

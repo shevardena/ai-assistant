@@ -2,6 +2,7 @@
 
 namespace App\Services\Api;
 
+use App\Enums\PriceSemanticRole;
 use App\Models\ApiOperation;
 use App\Models\DataSource;
 use App\Services\Api\Exceptions\GraphqlRequestException;
@@ -587,7 +588,7 @@ class ApiConnectionBuilderService
     private function liveResponseMapping(array $mapping, mixed $fields): array
     {
         if (isset($mapping['output']) || isset($mapping['collection'])) {
-            return $mapping;
+            return $this->normalizeExistingLiveResponseMapping($mapping);
         }
 
         $output = [];
@@ -597,14 +598,14 @@ class ApiConnectionBuilderService
             $path = (string) ($field['path'] ?? '');
 
             if ($name !== '' && $path !== '') {
-                $supportedTypes = ['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'];
-                $type = (string) ($field['type'] ?? 'string');
-                $normalizedType = in_array($type, $supportedTypes, true) ? $type : 'string';
+                $normalizedType = $this->responseFieldType($field['type'] ?? $field['data_type'] ?? null);
+                $semanticRole = PriceSemanticRole::normalize($field['semantic_role'] ?? $field['semantic_type'] ?? null, $name);
 
                 $output[$name] = [
                     'path' => $path,
                     'required' => (bool) ($field['required'] ?? true),
                     'type' => $normalizedType,
+                    ...($semanticRole instanceof PriceSemanticRole ? ['semantic_role' => $semanticRole->value] : []),
                     'searchable' => (bool) ($field['searchable'] ?? in_array($normalizedType, ['string', 'date', 'datetime'], true)),
                     'filterable' => (bool) ($field['filterable'] ?? true),
                     'sortable' => (bool) ($field['sortable'] ?? in_array($normalizedType, ['string', 'integer', 'decimal', 'date', 'datetime'], true)),
@@ -614,6 +615,57 @@ class ApiConnectionBuilderService
         }
 
         return $output === [] ? $mapping : ['output' => $output];
+    }
+
+    /** @param array<string, mixed> $mapping */
+    private function normalizeExistingLiveResponseMapping(array $mapping): array
+    {
+        foreach (['output', 'fields'] as $section) {
+            if (! is_array($mapping[$section] ?? null)) {
+                continue;
+            }
+
+            foreach ($mapping[$section] as $name => $definition) {
+                if (! is_array($definition)) {
+                    continue;
+                }
+
+                $type = $this->responseFieldType($definition['type'] ?? $definition['data_type'] ?? null);
+                $role = PriceSemanticRole::normalize($definition['semantic_role'] ?? $definition['semantic_type'] ?? null, (string) $name);
+                $mapping[$section][$name]['type'] = $type;
+                if ($role instanceof PriceSemanticRole) {
+                    $mapping[$section][$name]['semantic_role'] = $role->value;
+                }
+            }
+        }
+
+        $collectionFields = data_get($mapping, 'collection.fields');
+        if (is_array($collectionFields)) {
+            foreach ($collectionFields as $name => $definition) {
+                if (! is_array($definition)) {
+                    continue;
+                }
+
+                $type = $this->responseFieldType($definition['type'] ?? $definition['data_type'] ?? null);
+                $role = PriceSemanticRole::normalize($definition['semantic_role'] ?? $definition['semantic_type'] ?? null, (string) $name);
+                $mapping['collection']['fields'][$name]['type'] = $type;
+                if ($role instanceof PriceSemanticRole) {
+                    $mapping['collection']['fields'][$name]['semantic_role'] = $role->value;
+                }
+            }
+        }
+
+        return $mapping;
+    }
+
+    private function responseFieldType(mixed $type): string
+    {
+        $normalized = strtolower(trim((string) $type));
+        $normalized = $normalized === 'number' ? 'decimal' : $normalized;
+
+        return in_array($normalized, ['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'], true)
+            ? $normalized
+            : 'string';
     }
 
     /** @return array<string, scalar|null> */

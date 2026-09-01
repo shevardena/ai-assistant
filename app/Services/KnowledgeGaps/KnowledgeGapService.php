@@ -189,7 +189,7 @@ final class KnowledgeGapService
         foreach ($response->toolOutcomes as $outcome) {
             $kind = $outcome['outcome'];
 
-            if ($kind === 'knowledge_success' || $kind === 'non_knowledge_failure') {
+            if (in_array($kind, ['knowledge_success', 'catalog_success', 'partial_success', 'failed', 'non_knowledge_failure'], true)) {
                 return null;
             }
 
