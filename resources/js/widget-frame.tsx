@@ -66,6 +66,37 @@ type ChatAttachment = {
     size?: number;
 };
 
+function createOptimisticMessageId(): string {
+    const browserCrypto = globalThis.crypto;
+
+    if (typeof browserCrypto?.randomUUID === 'function') {
+        return browserCrypto.randomUUID();
+    }
+
+    const bytes = new Uint8Array(16);
+
+    if (typeof browserCrypto?.getRandomValues === 'function') {
+        browserCrypto.getRandomValues(bytes);
+    } else {
+        for (let index = 0; index < bytes.length; index += 1) {
+            bytes[index] = Math.floor(Math.random() * 256);
+        }
+    }
+
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    return [
+        [...bytes.slice(0, 4)],
+        [...bytes.slice(4, 6)],
+        [...bytes.slice(6, 8)],
+        [...bytes.slice(8, 10)],
+        [...bytes.slice(10)],
+    ]
+        .map((part) => part.map((byte) => byte.toString(16).padStart(2, '0')).join(''))
+        .join('-');
+}
+
 type SessionPayload = {
     conversation_id: string;
     visitor_id: string;
@@ -565,7 +596,7 @@ function WidgetFrame({
 
         setSending(true);
         setError(null);
-        const messageId = optimisticMessageId ?? `temp-${crypto.randomUUID()}`;
+        const messageId = optimisticMessageId ?? `temp-${createOptimisticMessageId()}`;
         const failureMessageId = `${messageId}-error`;
         const pendingWelcome = !isRetry && showWelcome
             ? {
