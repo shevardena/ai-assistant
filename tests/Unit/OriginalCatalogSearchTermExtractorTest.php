@@ -1,0 +1,18 @@
+<?php
+
+use App\Services\Ai\OriginalCatalogSearchTermExtractor;
+
+test('extracts the original meaningful catalog term from multilingual requests', function () {
+    $extractor = app(OriginalCatalogSearchTermExtractor::class);
+
+    expect($extractor->extract('პრიუს'))->toBe('პრიუს')
+        ->and($extractor->extract('მაჩვენე პრიუსის ნაწილები'))->toBe('პრიუს')
+        ->and($extractor->extract('სალამი, პრისუზე რამე გაქვთ?'))->toBe('პრისუ')
+        ->and($extractor->extract('2009 წლიან პრიუსზე?'))->toBe('პრიუს')
+        ->and($extractor->extract('show me Toyota Prius products'))->toBe('Toyota Prius')
+        ->and($extractor->extract('ABC-123'))->toBe('ABC-123');
+});
+
+test('does not turn a generic product request into a search term', function () {
+    expect(app(OriginalCatalogSearchTermExtractor::class)->extract('მაჩვენე პროდუქტები'))->toBeNull();
+});

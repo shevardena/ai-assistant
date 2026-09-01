@@ -7,10 +7,13 @@ use App\Models\BotCardTemplate;
 use App\Models\Dataset;
 use App\Models\DatasetField;
 use App\Models\DatasetRecord;
+use App\Services\Conversations\ConversationCycleLogger;
 use Illuminate\Support\Collection;
 
 class ProductCardFormatter
 {
+    public function __construct(private readonly ?ConversationCycleLogger $cycleLogger = null) {}
+
     /**
      * Format one record using a validated, dataset-specific card template.
      */
@@ -65,16 +68,21 @@ class ProductCardFormatter
     /**
      * Format records returned by successful searches, preserving encounter order.
      *
-     * @param  list<array{dataset_id: int, record_ids: list<int>}>  $sources
+     * @param  list<array<string, mixed>>  $sources
      * @return list<array<string, int|float|string|null>>
      */
     public function formatSearchSources(Bot $bot, array $sources): array
     {
+        $candidateCount = 0;
         $cards = [];
         $seen = [];
         $maximum = max(1, (int) config('widget.max_result_cards', 6));
 
         foreach ($sources as $source) {
+            $candidateCount += is_array($source['live_items'] ?? null)
+                ? count($source['live_items'])
+                : count((array) ($source['record_ids'] ?? []));
+
             if (count($cards) >= $maximum) {
                 break;
             }
@@ -139,6 +147,12 @@ class ProductCardFormatter
                 $cards[] = $card->toArray();
             }
         }
+
+        $this->cycleLogger?->event('product_cards.mapped', [
+            'source_count' => count($sources),
+            'candidate_count' => $candidateCount,
+            'product_card_count' => count($cards),
+        ]);
 
         return $cards;
     }

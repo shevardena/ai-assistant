@@ -16,6 +16,9 @@ use App\Models\Team;
 use App\Models\WidgetVisitor;
 use App\Services\Ai\AiSearchOrchestrator;
 use App\Services\Ai\AiSearchResponse;
+use App\Services\Ai\BotToolRegistry;
+use App\Services\Ai\Tools\Contracts\BotTool;
+use App\Services\Api\LiveOperationCapabilityService;
 use App\Services\Billing\TeamEntitlementService;
 use App\Services\Cards\ProductCardFormatter;
 use App\Services\Conversations\Blocks\ConversationBlockNormalizer;
@@ -37,6 +40,9 @@ class ConversationService
         private readonly ConversationHandoffService $handoffService,
         private readonly TeamEntitlementService $entitlements,
         private readonly CustomerIdentityResolutionService $customers,
+        private readonly BotToolRegistry $toolRegistry,
+        private readonly LiveOperationCapabilityService $liveOperations,
+        private readonly ConversationCycleLogger $cycleLogger,
     ) {}
 
     public function createPreviewConversation(Bot $bot): Conversation
@@ -329,6 +335,59 @@ class ConversationService
 
         $conversation->update(['last_message_at' => now()]);
 
+        $availableTools = array_map(
+            static fn (BotTool $tool): string => $tool->name(),
+            $this->toolRegistry->forBot($bot),
+        );
+        $this->cycleLogger->start(
+            $bot,
+            $conversation,
+            $userMessage,
+            $inboundMessage?->channel->value ?? (string) data_get($conversation->metadata, 'source', 'conversation'),
+            $availableTools,
+            $this->liveOperations->has($bot, 'search_catalog'),
+        );
+
+        $assistantMessageId = null;
+        $cycleFailed = false;
+
+        try {
+            $reply = $this->completeMessageAfterCycleStart(
+                $bot,
+                $conversation,
+                $message,
+                $runtimeContext,
+                $userMessage,
+                $mode,
+            );
+            $assistantMessageId = $reply->assistantMessage->id;
+
+            return $reply;
+        } catch (\Throwable $exception) {
+            $cycleFailed = true;
+            $this->cycleLogger->failed($exception);
+
+            throw $exception;
+        } finally {
+            if (! $cycleFailed) {
+                $this->cycleLogger->complete(['assistant_message_id' => $assistantMessageId]);
+            }
+            $this->cycleLogger->clear();
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $runtimeContext
+     */
+    private function completeMessageAfterCycleStart(
+        Bot $bot,
+        Conversation $conversation,
+        string $message,
+        array $runtimeContext,
+        Message $userMessage,
+        RuntimeMode $mode,
+    ): ConversationReply {
+
         if ($conversation->fresh()->handoff_status !== ConversationHandoffStatus::Ai) {
             return $this->bypassedReply($conversation, $userMessage);
         }
@@ -342,6 +401,10 @@ class ConversationService
             $userMessage,
             $runtimeContext,
             mode: $mode,
+        );
+        $this->cycleLogger->finalAnswer(
+            $response,
+            $this->liveOperations->has($bot, 'search_catalog'),
         );
 
         $conversation = $conversation->fresh();

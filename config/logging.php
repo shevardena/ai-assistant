@@ -73,6 +73,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'chatbot_runtime' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/chatbot-runtime.log'),
+            'level' => env('CHATBOT_RUNTIME_LOG_LEVEL', 'debug'),
+            'max_files' => env('CHATBOT_RUNTIME_LOG_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'monthly' => [
             'driver' => 'monthly',
             'path' => storage_path('logs/laravel.log'),

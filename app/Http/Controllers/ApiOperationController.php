@@ -121,6 +121,20 @@ class ApiOperationController extends Controller
                                 'remote' => $remote,
                             ])->all())
                             ->values()->all(),
+                        'constraints' => collect(data_get($apiOperation->request_mapping, 'live_query.constraints', []))
+                            ->flatMap(fn (array $operators, string $type): array => collect($operators)->map(function (mixed $mapping, string $operator) use ($type): array {
+                                $mapping = is_array($mapping) ? $mapping : ['strategy' => 'single_parameter', 'remote_parameter' => (string) $mapping];
+
+                                return [
+                                    'type' => $type,
+                                    'operator' => $operator,
+                                    'strategy' => $mapping['strategy'] ?? 'single_parameter',
+                                    'remote_parameter' => $mapping['remote_parameter'] ?? '',
+                                    'remote_from_parameter' => $mapping['remote_from_parameter'] ?? '',
+                                    'remote_to_parameter' => $mapping['remote_to_parameter'] ?? '',
+                                ];
+                            })->all())
+                            ->values()->all(),
                     ],
                     'pagination' => data_get($apiOperation->response_mapping, 'pagination', ['type' => 'none']),
                     'timeout_ms' => $apiOperation->timeout_ms,

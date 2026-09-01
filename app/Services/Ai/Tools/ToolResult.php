@@ -36,13 +36,16 @@ final readonly class ToolResult
         return new self($data, $metadata, $blocks);
     }
 
-    public static function failure(string $error, string $message): self
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    public static function failure(string $error, string $message, array $metadata = []): self
     {
         return new self([
             'ok' => false,
             'error' => $error,
             'message' => $message,
-        ]);
+        ], $metadata);
     }
 
     public static function requiresConfirmation(string $actionReference, string $summary): self

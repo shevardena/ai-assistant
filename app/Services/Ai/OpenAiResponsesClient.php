@@ -3,16 +3,20 @@
 namespace App\Services\Ai;
 
 use App\Services\Ai\Contracts\AiClient;
+use App\Services\Conversations\ConversationCycleLogger;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Throwable;
 
 class OpenAiResponsesClient implements AiClient
 {
+    public function __construct(private readonly ?ConversationCycleLogger $cycleLogger = null) {}
+
     /**
      * @param  array<string, mixed>  $payload
-     * @return array{output: list<array<string, mixed>>, output_text: string|null, usage: array<string, mixed>|null}
+     * @return array{output: list<array<string, mixed>>, output_text: string|null, usage: array<string, mixed>|null, id?: string|null, status?: string|null, finish_reason?: string|null}
      */
     public function createResponse(array $payload): array
     {
@@ -24,16 +28,48 @@ class OpenAiResponsesClient implements AiClient
         }
 
         try {
+            $this->cycleLogger?->event('ai_provider.request.started', [
+                'provider' => 'openai',
+                'endpoint' => '/v1/responses',
+                'model' => $model,
+            ]);
             $response = $this->request($apiKey)->post('/responses', [
                 ...$payload,
                 'model' => $model,
                 'store' => false,
             ]);
         } catch (ConnectionException $exception) {
+            $this->cycleLogger?->event('ai_provider.request.failed', [
+                'provider' => 'openai',
+                'endpoint' => '/v1/responses',
+                'model' => $model,
+                'failure_type' => 'connection',
+                'exception' => $exception::class,
+                'exception_message' => $this->safeExceptionMessage($exception, $apiKey),
+            ], 'warning');
             throw new AiException('OpenAI could not be reached.', previous: $exception);
         } catch (Throwable $exception) {
+            $this->cycleLogger?->event('ai_provider.request.failed', [
+                'provider' => 'openai',
+                'endpoint' => '/v1/responses',
+                'model' => $model,
+                'failure_type' => 'request',
+                'exception' => $exception::class,
+                'exception_message' => $this->safeExceptionMessage($exception, $apiKey),
+            ], 'warning');
             throw new AiException('OpenAI request failed.', previous: $exception);
         }
+
+        $responseBody = $response->json();
+        $this->cycleLogger?->event('ai_provider.response.received', [
+            'provider' => 'openai',
+            'endpoint' => '/v1/responses',
+            'model' => $model,
+            'http_status' => $response->status(),
+            'successful' => $response->successful(),
+            'response_id' => is_array($responseBody) && is_string($responseBody['id'] ?? null) ? $responseBody['id'] : null,
+            'error' => is_array($responseBody) ? ($responseBody['error'] ?? null) : null,
+        ]);
 
         if ($response->unauthorized() || $response->forbidden()) {
             throw new AiException('OpenAI authentication failed.');
@@ -67,6 +103,9 @@ class OpenAiResponsesClient implements AiClient
             'output' => $output,
             'output_text' => is_string($body['output_text'] ?? null) ? $body['output_text'] : null,
             'usage' => is_array($body['usage'] ?? null) ? $body['usage'] : null,
+            'id' => is_string($body['id'] ?? null) ? $body['id'] : null,
+            'status' => is_string($body['status'] ?? null) ? $body['status'] : null,
+            'finish_reason' => is_string($body['finish_reason'] ?? null) ? $body['finish_reason'] : null,
         ];
     }
 
@@ -82,5 +121,10 @@ class OpenAiResponsesClient implements AiClient
                 static fn (Throwable $exception, PendingRequest $request, ?string $message): bool => $exception instanceof ConnectionException,
             )
             ->baseUrl('https://api.openai.com/v1');
+    }
+
+    private function safeExceptionMessage(Throwable $exception, string $apiKey): string
+    {
+        return Str::limit(str_replace($apiKey, '[REDACTED]', $exception->getMessage()), 500);
     }
 }

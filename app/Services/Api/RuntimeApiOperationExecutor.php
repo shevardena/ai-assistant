@@ -7,6 +7,7 @@ use App\Services\Api\Exceptions\GraphqlRequestException;
 use App\Services\Api\LiveRead\LiveReadQueryPlan;
 use App\Services\Api\LiveRead\LiveReadQueryPlanner;
 use App\Services\Api\LiveRead\LiveReadRecordMatcher;
+use App\Services\Conversations\ConversationCycleLogger;
 use App\Services\Imports\Exceptions\ImportException;
 use App\Services\Imports\RestApiRequestExecutor;
 use App\Services\Imports\SourcePathResolver;
@@ -40,6 +41,7 @@ class RuntimeApiOperationExecutor
         private readonly RestApiRequestExecutor $requestExecutor,
         private readonly SourcePathResolver $sourcePathResolver,
         private readonly GraphqlRequestExecutor $graphqlRequestExecutor,
+        private readonly ConversationCycleLogger $cycleLogger,
     ) {}
 
     /**
@@ -130,7 +132,8 @@ class RuntimeApiOperationExecutor
                     $deduplicatedCandidateCount++;
                     $matcherInputCount++;
                     $pageMatcherInputCount++;
-                    if ($this->matchesMappedRecord($record, array_values($plan->localFilters), $fields)
+                    if ($this->matchesMappedRecord($record, $plan->localFilters, $fields)
+                        && app(LiveReadRecordMatcher::class)->matchesConstraints($record, $plan->localConstraints, $fields)
                         && app(LiveReadRecordMatcher::class)->matchesSearchText($record, $plan->localSearchText, $fields)) {
                         $records[] = $record;
                         $matcherOutputCount++;
@@ -138,7 +141,7 @@ class RuntimeApiOperationExecutor
                     }
                 }
 
-                logger()->info('Live catalog response stages processed.', [
+                $this->cycleLogger->event('live_read.response.stages', [
                     'bot_id' => $runtimeOperation->bot->id,
                     'team_id' => $runtimeOperation->bot->team_id,
                     'operation_id' => $runtimeOperation->operation->id,
@@ -179,9 +182,17 @@ class RuntimeApiOperationExecutor
             }
 
             if ($plan->localSorts !== []) {
-                $records = app(LiveReadRecordMatcher::class)->sort($records, array_values($plan->localSorts));
+                $records = app(LiveReadRecordMatcher::class)->sort($records, $plan->localSorts);
             }
             $records = array_slice($records, 0, $plan->effectiveResultLimit);
+
+            if ($plan->localConstraints !== []) {
+                $this->cycleLogger->event('search_catalog.local_constraints.matched', [
+                    'constraints' => $plan->localConstraints,
+                    'candidates_before' => $matcherInputCount,
+                    'candidates_after' => $matcherOutputCount,
+                ]);
+            }
 
             return RuntimeApiResult::success([
                 'records' => $records,
@@ -560,8 +571,12 @@ class RuntimeApiOperationExecutor
      * @param  array<string, mixed>  $arguments
      * @return array{method: string, url: string, query: array<string, mixed>, body: array<string, mixed>}
      */
-    private function request(RuntimeApiOperation $runtimeOperation, array $arguments): array
-    {
+    private function request(
+        RuntimeApiOperation $runtimeOperation,
+        array $arguments,
+        ?string $unmappedSearchParameter = null,
+        ?string $unmappedSearchText = null,
+    ): array {
         $operation = $runtimeOperation->operation;
         $path = $operation->getAttribute('path');
         $mapping = $operation->getAttribute('request_mapping');
@@ -611,11 +626,18 @@ class RuntimeApiOperationExecutor
 
         $query = $this->fixedParameterMapping($mapping, 'query');
         $query = [...$query, ...$this->parameterMapping($mapping, 'query', $arguments)];
-        $body = array_replace_recursive(
-            $this->fixedParameterMapping($mapping, 'body', nested: true),
-            $this->parameterMapping($mapping, 'body', $arguments, true),
-        );
+        $body = $this->bodyValues($mapping, $arguments);
         $method = Str::upper((string) $operation->getAttribute('method'));
+
+        if ($unmappedSearchParameter !== null && $unmappedSearchText !== null) {
+            [$query, $body] = $this->addUnmappedSearchParameter(
+                $query,
+                $body,
+                $mapping,
+                $unmappedSearchParameter,
+                $unmappedSearchText,
+            );
+        }
 
         if ($body !== [] && in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
             throw new LogicException('The request body is not compatible with the operation method.');
@@ -627,6 +649,53 @@ class RuntimeApiOperationExecutor
             'query' => $query,
             'body' => $body,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $mapping
+     * @param  array<string, mixed>  $query
+     * @param  array<string, mixed>  $body
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function addUnmappedSearchParameter(
+        array $query,
+        array $body,
+        array $mapping,
+        string $parameter,
+        string $text,
+    ): array {
+        foreach (['query', 'body'] as $section) {
+            $sectionMapping = $mapping[$section] ?? [];
+
+            if (! is_array($sectionMapping) || ! in_array($parameter, $sectionMapping, true)) {
+                continue;
+            }
+
+            if ($section === 'query') {
+                $query[$parameter] = $text;
+            } else {
+                Arr::set($body, $parameter, $text);
+            }
+
+            return [$query, $body];
+        }
+
+        $query[$parameter] = $text;
+
+        return [$query, $body];
+    }
+
+    /**
+     * @param  array<string, mixed>  $mapping
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function bodyValues(array $mapping, array $arguments): array
+    {
+        return array_replace_recursive(
+            $this->fixedParameterMapping($mapping, 'body', nested: true),
+            $this->parameterMapping($mapping, 'body', $arguments, true),
+        );
     }
 
     /**
@@ -827,7 +896,10 @@ class RuntimeApiOperationExecutor
             throw new LogicException('The response collection mapping is invalid.');
         }
 
-        $configuredLimit = $definition['limit'] ?? self::MAX_MAPPED_COLLECTION_ITEMS;
+        $configuredLimit = $definition['limit'] ?? max(
+            self::MAX_MAPPED_COLLECTION_ITEMS,
+            (int) config('live-read.max_candidates', self::MAX_MAPPED_COLLECTION_ITEMS),
+        );
 
         if (! is_int($configuredLimit) || $configuredLimit < 1) {
             throw new LogicException('The response collection limit is invalid.');
@@ -1039,7 +1111,16 @@ class RuntimeApiOperationExecutor
 
         $request = $nextUrl !== null
             ? ['method' => Str::upper((string) $runtimeOperation->operation->method), 'url' => $nextUrl, 'query' => [], 'body' => []]
-            : $this->request($runtimeOperation, $plan->remoteArguments);
+            : $this->request(
+                $runtimeOperation,
+                $plan->remoteArguments,
+                $plan->remoteSearchParameter,
+                $plan->remoteSearchText,
+            );
+        if ($nextUrl === null) {
+            $request['query'] = [...$request['query'], ...$plan->remoteQuery];
+            $request['body'] = array_replace_recursive($request['body'], $plan->remoteBody);
+        }
         $pagination = (array) ($mapping['pagination'] ?? []);
         if (($pagination['type'] ?? null) === 'page' && $nextUrl === null) {
             $parameter = (string) ($pagination['parameter'] ?? 'page');
@@ -1054,7 +1135,7 @@ class RuntimeApiOperationExecutor
             }
         }
 
-        logger()->info('Live catalog remote request prepared.', [
+        $this->cycleLogger->event('live_api.request.prepared', [
             'bot_id' => $runtimeOperation->bot->id,
             'team_id' => $runtimeOperation->bot->team_id,
             'operation_id' => $runtimeOperation->operation->id,

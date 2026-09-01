@@ -4,6 +4,7 @@ use App\Models\ApiOperation;
 use App\Services\Api\LiveRead\LiveReadQuery;
 use App\Services\Api\LiveRead\LiveReadQueryPlanner;
 use App\Services\Api\LiveRead\LiveReadRecordMatcher;
+use App\Services\Api\LiveRead\YearRangeParser;
 use App\Services\Imports\SourcePathResolver;
 
 function liveOperation(array $mapping, array $requestMapping = []): ApiOperation
@@ -151,6 +152,27 @@ test('maps a configured remote search destination back to its operation argument
         ->and($plan->localSearchText)->toBeNull();
 });
 
+test('keeps a remote search parameter independent from operation arguments', function () {
+    $operation = liveOperation([
+        'collection' => [
+            'path' => 'data',
+            'fields' => ['title' => ['path' => 'name', 'type' => 'string']],
+        ],
+    ], [
+        'query' => [],
+        'live_query' => ['search_text' => 'name'],
+    ]);
+
+    $plan = (new LiveReadQueryPlanner)->plan($operation, LiveReadQuery::fromArguments([
+        'text' => 'Camry',
+    ]));
+
+    expect($plan->remoteArguments)->toBe([])
+        ->and($plan->remoteSearchParameter)->toBe('name')
+        ->and($plan->remoteSearchText)->toBe('Camry')
+        ->and($plan->localSearchText)->toBeNull();
+});
+
 test('exposes safe field metadata and rejects non-queryable fields', function () {
     $operation = liveOperation([
         'collection' => [
@@ -182,4 +204,123 @@ test('rejects descending numeric ranges', function () {
     expect(fn () => (new LiveReadQueryPlanner)->plan($operation, LiveReadQuery::fromArguments([
         'filters' => [['field' => 'capacity', 'operator' => 'between', 'value' => [10, 5]]],
     ])))->toThrow(InvalidArgumentException::class);
+});
+
+test('maps semantic year constraints to the explicitly configured remote parameter', function () {
+    $operation = liveOperation([
+        'collection' => ['path' => 'data', 'fields' => ['title' => ['path' => 'name', 'type' => 'string', 'searchable' => true]]],
+    ], [
+        'query' => [],
+        'live_query' => ['constraints' => ['year' => ['eq' => ['strategy' => 'single_parameter', 'remote_parameter' => 'y']]]],
+    ]);
+
+    $plan = (new LiveReadQueryPlanner)->plan($operation, LiveReadQuery::fromArguments([
+        'text' => 'Prius',
+        'constraints' => [['type' => 'year', 'operator' => 'eq', 'value' => 2009]],
+    ]));
+
+    expect($plan->remoteQuery)->toBe(['y' => 2009])
+        ->and($plan->remoteConstraints[0]['parameters'])->toBe(['y' => 2009])
+        ->and($plan->localConstraints)->toBe([]);
+});
+
+test('normalizes strict model constraint fields and year strings at the query boundary', function () {
+    $query = LiveReadQuery::fromArguments([
+        'constraints' => [[
+            'field' => 'year',
+            'operator' => 'eq',
+            'value' => '2009',
+        ]],
+    ]);
+
+    expect($query->constraints)->toBe([[
+        'type' => 'year',
+        'operator' => 'eq',
+        'value' => 2009,
+    ]]);
+});
+
+test('maps semantic year constraints to a configured year parameter', function () {
+    $operation = liveOperation([
+        'collection' => ['path' => 'data', 'fields' => ['title' => ['path' => 'name', 'type' => 'string', 'searchable' => true]]],
+    ], [
+        'query' => [],
+        'live_query' => ['constraints' => ['year' => ['eq' => 'year']]],
+    ]);
+
+    $plan = (new LiveReadQueryPlanner)->plan($operation, LiveReadQuery::fromArguments([
+        'constraints' => [['type' => 'year', 'operator' => 'eq', 'value' => 2009]],
+    ]));
+
+    expect($plan->remoteQuery)->toBe(['year' => 2009])
+        ->and($plan->localConstraints)->toBe([]);
+});
+
+test('maps range constraints only according to configured from and to parameters', function () {
+    $operation = liveOperation([
+        'collection' => ['path' => 'data', 'fields' => ['title' => ['path' => 'name', 'type' => 'string', 'searchable' => true]]],
+    ], [
+        'query' => [],
+        'live_query' => ['constraints' => ['year' => ['eq' => [
+            'strategy' => 'range_parameters',
+            'remote_from_parameter' => 'from',
+            'remote_to_parameter' => 'to',
+        ]]]],
+    ]);
+
+    $plan = (new LiveReadQueryPlanner)->plan($operation, LiveReadQuery::fromArguments([
+        'constraints' => [['type' => 'year', 'operator' => 'eq', 'value' => 2009]],
+    ]));
+
+    expect($plan->remoteQuery)->toBe(['from' => 2009, 'to' => 2009])
+        ->and($plan->localConstraints)->toBe([]);
+});
+
+test('keeps unmapped and remotely unsupported semantic constraints local', function () {
+    $operation = liveOperation([
+        'collection' => ['path' => 'data', 'fields' => ['title' => ['path' => 'name', 'type' => 'string', 'searchable' => true]]],
+    ], [
+        'query' => [],
+        'live_query' => ['constraints' => ['year' => ['eq' => ['strategy' => 'single_parameter', 'remote_parameter' => 'year']]]],
+    ]);
+
+    $planner = new LiveReadQueryPlanner;
+    $unmappedOperation = liveOperation([
+        'collection' => ['path' => 'data', 'fields' => ['title' => ['path' => 'name', 'type' => 'string', 'searchable' => true]]],
+    ], ['query' => []]);
+    $unmapped = $planner->plan($unmappedOperation, LiveReadQuery::fromArguments([
+        'constraints' => [['type' => 'year', 'operator' => 'eq', 'value' => 2009]],
+    ]));
+    $unsupportedOperator = $planner->plan($operation, LiveReadQuery::fromArguments([
+        'constraints' => [['type' => 'year', 'operator' => 'gte', 'value' => 2009]],
+    ]));
+    $unknown = $planner->plan($operation, LiveReadQuery::fromArguments([
+        'constraints' => [['type' => 'color', 'operator' => 'eq', 'value' => 'red']],
+    ]));
+
+    expect($unmapped->remoteQuery)->toBe([])
+        ->and($unmapped->localConstraints)->toHaveCount(1)
+        ->and($unsupportedOperator->remoteQuery)->toBe([])
+        ->and($unsupportedOperator->localConstraints)->toHaveCount(1)
+        ->and($unknown->remoteQuery)->toBe([])
+        ->and($unknown->unsupportedConstraints)->toHaveCount(1);
+});
+
+test('matches conservative textual and structured automotive year ranges', function () {
+    $parser = new YearRangeParser;
+    $matcher = new LiveReadRecordMatcher(new SourcePathResolver, $parser);
+    $fields = [
+        'title' => ['type' => 'string', 'searchable' => true, 'displayable' => true],
+        'year_from' => ['type' => 'integer'],
+        'year_to' => ['type' => 'integer'],
+    ];
+
+    expect($parser->parse('2009-2011 PRIUS'))->toBe(['from' => 2009, 'to' => 2011])
+        ->and($parser->parse('09-11 PRIUS'))->toBe(['from' => 2009, 'to' => 2011])
+        ->and($parser->parse('15mm bolt'))->toBeNull()
+        ->and($parser->parse('12V battery'))->toBeNull()
+        ->and($parser->parse('09A connector'))->toBeNull()
+        ->and($matcher->matchesConstraints(['title' => '09-11 PRIUS - grille'], [['type' => 'year', 'operator' => 'eq', 'value' => 2009]], $fields))->toBeTrue()
+        ->and($matcher->matchesConstraints(['title' => '12-15 PRIUS - bumper'], [['type' => 'year', 'operator' => 'eq', 'value' => 2009]], $fields))->toBeFalse()
+        ->and($matcher->matchesConstraints(['year_from' => 2009, 'year_to' => 2011], [['type' => 'year', 'operator' => 'eq', 'value' => 2010]], $fields))->toBeTrue();
 });

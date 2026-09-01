@@ -4,15 +4,23 @@ namespace App\Services\Ai\Tools;
 
 use App\Models\ApiOperation;
 use App\Models\Bot;
+use App\Models\Dataset;
+use App\Models\DatasetRecord;
 use App\Services\Ai\AiException;
 use App\Services\Ai\BotRuntimeContextBuilder;
+use App\Services\Ai\CatalogSearchSourceResolver;
 use App\Services\Ai\Formatters\AiSearchResultFormatter;
 use App\Services\Ai\Mappers\AiSearchQueryFactory;
+use App\Services\Ai\OriginalCatalogSearchTermExtractor;
 use App\Services\Ai\Tools\Contracts\BotTool;
 use App\Services\Api\LiveRead\LiveReadQuery;
 use App\Services\Api\LiveRead\LiveReadQueryPlanner;
+use App\Services\Api\LiveRead\LiveReadRecordMatcher;
 use App\Services\Api\RuntimeApiOperationExecutor;
 use App\Services\Api\RuntimeApiOperationResolver;
+use App\Services\Conversations\ConversationCycleLogger;
+use App\Services\Search\Data\SearchQuery;
+use App\Services\Search\Data\SearchResult;
 use App\Services\Search\Enums\SearchSortDirection;
 use App\Services\Search\Exceptions\InvalidSearchCriteriaException;
 use App\Services\Search\SearchService;
@@ -30,6 +38,10 @@ class SearchCatalogTool implements BotTool
         private readonly RuntimeApiOperationResolver $operationResolver,
         private readonly RuntimeApiOperationExecutor $operationExecutor,
         private readonly LiveReadQueryPlanner $liveReadPlanner,
+        private readonly ConversationCycleLogger $cycleLogger,
+        private readonly CatalogSearchSourceResolver $sourceResolver,
+        private readonly OriginalCatalogSearchTermExtractor $originalTermExtractor,
+        private readonly LiveReadRecordMatcher $recordMatcher,
     ) {}
 
     public function name(): string
@@ -50,7 +62,10 @@ class SearchCatalogTool implements BotTool
         $context = $this->contextBuilder->build($bot);
         $datasetSlugs = array_map(
             static fn (array $dataset): string => $dataset['slug'],
-            $context['datasets'],
+            array_values(array_filter(
+                $context['datasets'],
+                static fn (array $dataset): bool => ! in_array($dataset['entityType'], ['faq', 'knowledge'], true),
+            )),
         );
 
         return [
@@ -79,6 +94,23 @@ class SearchCatalogTool implements BotTool
                         'required' => ['field', 'operator', 'value'],
                         'additionalProperties' => false,
                     ],
+                ],
+                'constraints' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'field' => ['type' => 'string', 'description' => 'Semantic constraint field such as year, brand, category, or product_type.'],
+                            'operator' => [
+                                'type' => 'string',
+                                'enum' => ['eq', 'gte', 'lte'],
+                            ],
+                            'value' => ['type' => 'string'],
+                        ],
+                        'required' => ['field', 'operator', 'value'],
+                        'additionalProperties' => false,
+                    ],
+                    'description' => 'Semantic product constraints. Keep these separate from the core catalog search text.',
                 ],
                 'sorts' => [
                     'type' => 'array',
@@ -114,7 +146,7 @@ class SearchCatalogTool implements BotTool
                     'description' => 'Use exact for a requested number, minimum for at least, maximum for at most, range for a lower and upper bound, or all for a bounded broad result.',
                 ],
             ],
-            'required' => ['dataset', 'text', 'filters', 'sorts', 'limit', 'result_count'],
+            'required' => ['dataset', 'text', 'filters', 'constraints', 'sorts', 'limit', 'result_count'],
             'additionalProperties' => false,
         ];
     }
@@ -124,24 +156,43 @@ class SearchCatalogTool implements BotTool
      */
     public function execute(Bot $bot, array $arguments, ToolExecutionContext $context): ToolResult
     {
-        $normalizedSearchText = is_string($arguments['text'] ?? null)
-            ? trim((string) $arguments['text']) ?: null
-            : null;
+        $rawArguments = $arguments;
+        $canonicalSearchText = $this->searchText($arguments['text'] ?? null);
+        $relaxedSearchText = $this->relaxedSearchText($canonicalSearchText);
+        $originalSearchText = $this->originalTermExtractor->extract(
+            $context->userMessage?->content,
+        );
+        $searchCandidates = $this->searchCandidates($originalSearchText, $canonicalSearchText, $relaxedSearchText);
+        $constraints = LiveReadQuery::normalizeConstraints($arguments['constraints'] ?? []);
+        $arguments = [...$arguments, 'constraints' => $constraints];
 
-        logger()->info('AI search_catalog tool invoked.', [
+        $this->cycleLogger->event('search_catalog.intent.resolved', [
+            'original_message' => Str::limit($context->userMessage === null ? '' : (string) $context->userMessage->content, 1000),
+            'original_search_text' => $originalSearchText,
+            'canonical_search_text' => $canonicalSearchText,
+            'relaxed_search_text' => $relaxedSearchText,
+            'constraints' => $constraints,
+        ]);
+
+        $this->cycleLogger->event('search_catalog.invoked', [
             'bot_id' => $bot->id,
             'team_id' => $bot->team_id,
             'tool' => 'search_catalog',
             'original_customer_message' => Str::limit($context->userMessage === null ? '' : (string) $context->userMessage->content, 1000),
             'tool_arguments' => [
-                'dataset' => $arguments['dataset'] ?? null,
-                'text' => $arguments['text'] ?? null,
-                'filters' => $arguments['filters'] ?? [],
-                'sorts' => $arguments['sorts'] ?? [],
-                'limit' => $arguments['limit'] ?? null,
-                'result_count' => $arguments['result_count'] ?? null,
+                'dataset' => $rawArguments['dataset'] ?? null,
+                'text' => $rawArguments['text'] ?? null,
+                'filters' => $rawArguments['filters'] ?? [],
+                'constraints' => $rawArguments['constraints'] ?? [],
+                'sorts' => $rawArguments['sorts'] ?? [],
+                'limit' => $rawArguments['limit'] ?? null,
+                'result_count' => $rawArguments['result_count'] ?? null,
             ],
-            'normalized_search_text' => $normalizedSearchText,
+            'original_search_text' => $originalSearchText,
+            'canonical_search_text' => $canonicalSearchText,
+            'relaxed_search_text' => $relaxedSearchText,
+            'constraints' => $constraints,
+            'normalized_search_text' => $canonicalSearchText,
         ]);
 
         if ((int) $context->bot->id !== (int) $bot->id
@@ -153,65 +204,29 @@ class SearchCatalogTool implements BotTool
         }
 
         try {
-            if ($this->shouldUseLive($bot, $arguments)) {
-                return $this->executeLive($bot, $arguments);
+            $requestedDataset = is_string($arguments['dataset'] ?? null)
+                ? $arguments['dataset']
+                : null;
+            $resolution = $this->sourceResolver->resolve($bot, $requestedDataset);
+            $this->cycleLogger->event('search_catalog.sources.resolved', [
+                'requested_dataset' => $requestedDataset,
+                'eligible_sources' => array_map(fn (array $source): array => $this->sourceLog($source), $resolution['eligible']),
+                'rejected_sources' => $resolution['rejected'],
+            ]);
+
+            if ($resolution['eligible'] === []) {
+                return ToolResult::failure('search_unavailable', 'No product catalog is configured for this bot.');
             }
 
-            ['dataset' => $dataset, 'query' => $query] = $this->queryFactory->make($bot, $arguments);
-            $startedAt = hrtime(true);
-            $result = $this->searchService->search($context->team, $query);
-            $formatted = $this->resultFormatter->format($dataset, $result);
+            if (count($resolution['eligible']) === 1) {
+                $source = $resolution['eligible'][0];
 
-            if (! $context->isTest()) {
-                try {
-                    $bot->searchRuns()->create([
-                        'dataset_id' => $dataset->id,
-                        'conversation_id' => $context->conversation?->id,
-                        'message_id' => $context->userMessage?->id,
-                        'query' => $query->text ?? 'catalog search',
-                        'intent' => [
-                            'filters' => array_map(fn ($filter): array => [
-                                'field' => $filter->field,
-                                'operator' => $filter->operator->value,
-                                'value' => $filter->value,
-                            ], $query->filters),
-                            'sorts' => array_map(fn ($sort): array => [
-                                'field' => $sort->field,
-                                'direction' => $sort->direction->value,
-                            ], $query->sorts),
-                        ],
-                        'adapter' => config('search.engine'),
-                        'request_payload' => ['limit' => $query->limit],
-                        'result_count' => $result->total,
-                        'latency_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
-                        'status' => 'completed',
-                    ]);
-                } catch (Throwable $exception) {
-                    logger()->warning('AI catalog search telemetry failed.', [
-                        'bot_id' => $bot->id,
-                        'team_id' => $bot->team_id,
-                        'tool' => 'search_catalog',
-                        'exception' => $exception::class,
-                        'message' => $exception->getMessage(),
-                    ]);
-                }
+                return ($source['type'] ?? null) === 'api_operation'
+                    ? $this->executeLive($bot, $arguments, $searchCandidates, $source)
+                    : $this->executeDataset($bot, $arguments, $context, $source, $searchCandidates);
             }
 
-            return ToolResult::success(
-                data: [
-                    'ok' => true,
-                    'search' => $formatted,
-                ],
-                metadata: [
-                    'card_source' => [
-                        'dataset_id' => (int) $dataset->id,
-                        'record_ids' => array_map(
-                            fn ($record): int => (int) $record->id,
-                            $result->records,
-                        ),
-                    ],
-                ],
-            );
+            return $this->executeFederated($bot, $arguments, $context, $resolution['eligible'], $searchCandidates);
         } catch (AiException|InvalidSearchCriteriaException|ModelNotFoundException $exception) {
             logger()->notice('AI catalog search request was rejected.', [
                 'bot_id' => $bot->id,
@@ -242,15 +257,327 @@ class SearchCatalogTool implements BotTool
         }
     }
 
-    /** @param array<string, mixed> $arguments */
-    private function shouldUseLive(Bot $bot, array $arguments): bool
-    {
-        return ($arguments['dataset'] ?? null) === null
-            && $this->operationResolver->resolveRead($bot, 'search_catalog') !== null;
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @param  array<string, mixed>  $source
+     * @param  list<array{type: string, text: string|null}>  $searchCandidates
+     */
+    private function executeDataset(
+        Bot $bot,
+        array $arguments,
+        ToolExecutionContext $context,
+        array $source,
+        array $searchCandidates,
+    ): ToolResult {
+        $dataset = $source['dataset'] ?? null;
+
+        if (! $dataset instanceof Dataset) {
+            return ToolResult::failure('invalid_search', 'The selected product catalog is unavailable.');
+        }
+
+        $attempts = [];
+        /** @var SearchQuery|null $query */
+        $query = null;
+        /** @var SearchResult|null $result */
+        $result = null;
+        /** @var array{dataset: string, count: int, items: list<array<string, mixed>>}|null $formatted */
+        $formatted = null;
+        $startedAt = hrtime(true);
+        $selectedCandidate = $searchCandidates[0] ?? ['type' => 'canonical', 'text' => null];
+        $semanticConstraints = array_values(array_filter((array) ($arguments['constraints'] ?? []), 'is_array'));
+
+        foreach ($searchCandidates as $attemptIndex => $candidate) {
+            $attemptArguments = [...$arguments, 'dataset' => $dataset->slug, 'text' => $candidate['text']];
+            if ($semanticConstraints !== []) {
+                $attemptArguments['candidate_limit'] = min(100, max(100, (int) ($arguments['limit'] ?? 10)));
+            }
+            ['query' => $query] = $this->queryFactory->make($bot, $attemptArguments);
+            $startedAt = hrtime(true);
+            $result = $this->searchService->search($context->team, $query);
+            if ($semanticConstraints !== []) {
+                $candidatesBefore = count($result->records);
+                $fields = $dataset->fields()->get()->mapWithKeys(fn ($field): array => [
+                    $field->key => [
+                        'type' => $field->data_type,
+                        'searchable' => (bool) $field->is_searchable,
+                        'displayable' => (bool) $field->is_displayable,
+                    ],
+                ])->all();
+                $fields['searchable_text'] = ['type' => 'string', 'searchable' => true, 'displayable' => false];
+                $records = array_values(array_filter(
+                    $result->records,
+                    fn ($record): bool => $this->recordMatcher->matchesConstraints(
+                        $this->datasetRecordValues($record),
+                        $semanticConstraints,
+                        $fields,
+                    ),
+                ));
+                $result = new SearchResult($records, count($records));
+                $this->cycleLogger->event('search_catalog.local_constraints.matched', [
+                    'constraints' => $semanticConstraints,
+                    'candidates_before' => $candidatesBefore,
+                    'candidates_after' => count($records),
+                ]);
+            }
+            $formatted = $this->resultFormatter->format($dataset, $result);
+            $count = count($result->records);
+            $hasNextCandidate = isset($searchCandidates[$attemptIndex + 1]);
+            $confirmedEmpty = $count === 0;
+            $fallbackTriggered = $confirmedEmpty && $hasNextCandidate;
+            $attempt = [
+                'type' => $candidate['type'],
+                'text' => $candidate['text'],
+                'count' => $count,
+                'confirmed_empty' => $confirmedEmpty,
+                'http_status' => null,
+                'fallback_triggered' => $fallbackTriggered,
+            ];
+            $attempts[] = $attempt;
+            $this->logSearchAttempt($source, $attemptIndex + 1, $candidate, $count, $confirmedEmpty, null, $fallbackTriggered);
+            $selectedCandidate = $candidate;
+
+            if (! $fallbackTriggered) {
+                break;
+            }
+        }
+
+        if ($query === null || $result === null || $formatted === null) {
+            return ToolResult::failure('search_unavailable', 'The catalog search is temporarily unavailable.');
+        }
+
+        if (! $context->isTest()) {
+            try {
+                $bot->searchRuns()->create([
+                    'dataset_id' => $dataset->id,
+                    'conversation_id' => $context->conversation?->id,
+                    'message_id' => $context->userMessage?->id,
+                    'query' => $query->text ?? 'catalog search',
+                    'intent' => [
+                        'filters' => array_map(fn ($filter): array => [
+                            'field' => $filter->field,
+                            'operator' => $filter->operator->value,
+                            'value' => $filter->value,
+                        ], $query->filters),
+                        'sorts' => array_map(fn ($sort): array => [
+                            'field' => $sort->field,
+                            'direction' => $sort->direction->value,
+                        ], $query->sorts),
+                    ],
+                    'adapter' => config('search.engine'),
+                    'request_payload' => ['limit' => $query->limit],
+                    'result_count' => $result->total,
+                    'latency_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
+                    'status' => 'completed',
+                ]);
+            } catch (Throwable $exception) {
+                logger()->warning('AI catalog search telemetry failed.', [
+                    'bot_id' => $bot->id,
+                    'team_id' => $bot->team_id,
+                    'tool' => 'search_catalog',
+                    'exception' => $exception::class,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        return ToolResult::success(
+            data: [
+                'ok' => true,
+                'search' => $formatted,
+            ],
+            metadata: [
+                'attempts' => $attempts,
+                'selected_query' => $selectedCandidate['text'],
+                'card_source' => [
+                    'dataset_id' => (int) $dataset->id,
+                    'record_ids' => array_map(
+                        fn ($record): int => (int) $record->id,
+                        $result->records,
+                    ),
+                ],
+            ],
+        );
     }
 
-    /** @param array<string, mixed> $arguments */
-    private function executeLive(Bot $bot, array $arguments): ToolResult
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @param  list<array<string, mixed>>  $sources
+     * @param  list<array{type: string, text: string|null}>  $searchCandidates
+     */
+    private function executeFederated(
+        Bot $bot,
+        array $arguments,
+        ToolExecutionContext $context,
+        array $sources,
+        array $searchCandidates,
+    ): ToolResult {
+        $items = [];
+        $cardSources = [];
+        $sourceResults = [];
+        $sourceErrors = [];
+        $attempts = [];
+        $selectedQueries = [];
+
+        foreach ($sources as $source) {
+            try {
+                $result = ($source['type'] ?? null) === 'api_operation'
+                    ? $this->executeLive($bot, $arguments, $searchCandidates, $source)
+                    : $this->executeDataset($bot, $arguments, $context, $source, $searchCandidates);
+            } catch (Throwable $exception) {
+                logger()->warning('Catalog source search failed during federation.', [
+                    ...$this->sourceLog($source),
+                    'exception' => $exception::class,
+                    'message' => $exception->getMessage(),
+                ]);
+                $sourceErrors[] = [
+                    ...$this->sourceLog($source),
+                    'error' => 'search_unavailable',
+                ];
+
+                continue;
+            }
+
+            foreach (($result->metadata['attempts'] ?? []) as $attempt) {
+                if (is_array($attempt)) {
+                    $attempts[] = [...$attempt, 'source' => $this->sourceLog($source)];
+                }
+            }
+            if (array_key_exists('selected_query', $result->metadata)) {
+                $selectedQueries[] = [
+                    'source' => $this->sourceLog($source),
+                    'query' => $result->metadata['selected_query'],
+                ];
+            }
+
+            if (($result->data['ok'] ?? false) !== true) {
+                $sourceErrors[] = [
+                    ...$this->sourceLog($source),
+                    'error' => $result->data['error'] ?? 'search_unavailable',
+                ];
+
+                continue;
+            }
+
+            $search = $result->data['search'] ?? [];
+            $sourceItems = $this->searchItems(is_array($search) ? ($search['items'] ?? null) : null);
+            $sourceIdentity = ($source['type'] ?? 'source').':'.(string) ($source['id'] ?? 'unknown');
+            $sourceResults[] = [
+                ...$this->sourceLog($source),
+                'count' => count($sourceItems),
+            ];
+            $items = [
+                ...$items,
+                ...array_map(
+                    static fn (array $item): array => [...$item, '_source_identity' => $sourceIdentity],
+                    $sourceItems,
+                ),
+            ];
+            foreach (($result->metadata['card_sources'] ?? []) as $cardSource) {
+                if (is_array($cardSource)) {
+                    $cardSources[] = $cardSource;
+                }
+            }
+            if (is_array($result->metadata['card_source'] ?? null)) {
+                $cardSources[] = $result->metadata['card_source'];
+            }
+        }
+
+        $items = $this->deduplicateItems($items);
+        $items = array_map(static function (array $item): array {
+            unset($item['_source_identity']);
+
+            return $item;
+        }, $items);
+
+        if ($items === [] && $sourceErrors !== []) {
+            return ToolResult::failure(
+                'search_unavailable',
+                'The product catalogs could not all be checked.',
+                [
+                    'attempts' => $attempts,
+                    'selected_queries' => $selectedQueries,
+                    'source_errors' => $sourceErrors,
+                ],
+            );
+        }
+
+        $limit = min(max(1, (int) ($arguments['limit'] ?? 10)), 100);
+
+        return ToolResult::success(
+            ['ok' => true, 'search' => ['dataset' => 'catalogs', 'count' => count($items), 'items' => array_slice($items, 0, $limit)]],
+            [
+                'card_sources' => $cardSources,
+                'source_results' => $sourceResults,
+                'source_errors' => $sourceErrors,
+                'attempts' => $attempts,
+                'selected_queries' => $selectedQueries,
+            ],
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
+     */
+    private function deduplicateItems(array $items): array
+    {
+        $seen = [];
+        $result = [];
+
+        foreach ($items as $item) {
+            $explicitIdentity = $item['external_id'] ?? $item['product_reference'] ?? null;
+            $sourceIdentity = (string) ($item['_source_identity'] ?? 'source:unknown');
+            $identity = $explicitIdentity ?? $item['id'] ?? $item['title'] ?? null;
+            $key = is_scalar($explicitIdentity)
+                ? 'identity:'.(string) $explicitIdentity
+                : (is_scalar($identity)
+                    ? $sourceIdentity.'|'.(string) $identity
+                    : $sourceIdentity.'|'.sha1(serialize($item)));
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function searchItems(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, static fn (mixed $item): bool => is_array($item)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     * @return array{type: mixed, id: mixed, name: mixed, slug: mixed, mode: mixed}
+     */
+    private function sourceLog(array $source): array
+    {
+        return [
+            'type' => $source['type'] ?? null,
+            'id' => $source['id'] ?? null,
+            'name' => $source['name'] ?? null,
+            'slug' => $source['slug'] ?? null,
+            'mode' => $source['mode'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @param  array<string, mixed>  $source
+     * @param  list<array{type: string, text: string|null}>  $searchCandidates
+     */
+    private function executeLive(Bot $bot, array $arguments, array $searchCandidates, array $source): ToolResult
     {
         $operation = $this->operationResolver->resolveRead($bot, 'search_catalog');
 
@@ -258,53 +585,110 @@ class SearchCatalogTool implements BotTool
             return ToolResult::failure('search_unavailable', 'The catalog search is temporarily unavailable.');
         }
 
-        $query = LiveReadQuery::fromArguments($arguments);
-        $runtimeArguments = $this->liveArguments($operation->operation, $arguments);
         $mappingValue = $operation->operation->getAttribute('request_mapping');
         $mapping = is_array($mappingValue) ? $mappingValue : [];
         $liveMapping = is_array($mapping['live_query'] ?? null) ? $mapping['live_query'] : [];
-        $plan = $this->liveReadPlanner->plan($operation->operation, $query, $runtimeArguments);
+        $attempts = [];
+        $selectedCandidate = $searchCandidates[0] ?? ['type' => 'canonical', 'text' => null];
 
-        logger()->info('Live catalog search plan created.', [
-            'bot_id' => $bot->id,
-            'team_id' => $bot->team_id,
-            'operation_id' => $operation->operation->id,
-            'operation' => $operation->operation->key,
-            'source_id' => $operation->dataSource->id,
-            'normalized_search_text' => $query->searchText,
-            'configured_remote_search_parameter' => $liveMapping['search_text'] ?? null,
-            'runtime_arguments' => $runtimeArguments,
-            'remote_arguments' => $plan->remoteArguments,
-            'local_search_text' => $plan->localSearchText,
-            'requested_minimum' => $plan->requestedMinimum,
-            'effective_result_limit' => $plan->effectiveResultLimit,
-            'candidate_budget' => $plan->candidateBudget,
-            'page_budget' => $plan->pageBudget,
-        ]);
-        $result = $this->operationExecutor->executeLiveRead($operation, $plan);
+        foreach ($searchCandidates as $attemptIndex => $candidate) {
+            $attemptArguments = [...$arguments, 'text' => $candidate['text']];
+            $query = LiveReadQuery::fromArguments($attemptArguments);
+            $runtimeArguments = $this->liveArguments($operation->operation, $attemptArguments);
+            $plan = $this->liveReadPlanner->plan($operation->operation, $query, $runtimeArguments);
+            $remoteParameter = $plan->remoteSearchParameter
+                ?? (is_string($liveMapping['search_text'] ?? null) ? $liveMapping['search_text'] : null);
 
-        if (! $result->success) {
-            return ToolResult::failure($result->error ?? 'search_unavailable', $result->message ?? 'The catalog search is temporarily unavailable.');
+            $this->cycleLogger->event('live_read.plan.created', [
+                'bot_id' => $bot->id,
+                'team_id' => $bot->team_id,
+                'operation_id' => $operation->operation->id,
+                'operation' => $operation->operation->key,
+                'source_id' => $operation->dataSource->id,
+                'normalized_search_text' => $query->searchText,
+                'configured_remote_search_parameter' => $liveMapping['search_text'] ?? null,
+                'remote_search_parameter' => $remoteParameter,
+                'runtime_arguments' => $runtimeArguments,
+                'remote_arguments' => $plan->remoteArguments,
+                'local_search_text' => $plan->localSearchText,
+                'requested_minimum' => $plan->requestedMinimum,
+                'effective_result_limit' => $plan->effectiveResultLimit,
+                'candidate_budget' => $plan->candidateBudget,
+                'page_budget' => $plan->pageBudget,
+            ]);
+            $result = $this->operationExecutor->executeLiveRead($operation, $plan);
+            $hasNextCandidate = isset($searchCandidates[$attemptIndex + 1]);
+
+            if (! $result->success) {
+                $attempt = [
+                    'type' => $candidate['type'],
+                    'text' => $candidate['text'],
+                    'count' => null,
+                    'confirmed_empty' => false,
+                    'http_status' => $result->httpStatus,
+                    'fallback_triggered' => false,
+                ];
+                $attempts[] = $attempt;
+                $this->logSearchAttempt($source, $attemptIndex + 1, $candidate, null, false, $result->httpStatus, false, $remoteParameter);
+
+                return ToolResult::failure(
+                    $result->error ?? 'search_unavailable',
+                    $result->message ?? 'The catalog search is temporarily unavailable.',
+                    [
+                        'attempts' => $attempts,
+                        'selected_query' => $candidate['text'],
+                        'live_read' => ['attempts' => $attempts],
+                    ],
+                );
+            }
+
+            $items = $this->normalizeLiveItems((array) ($result->data['records'] ?? []));
+            $liveReadMeta = (array) ($result->data['meta'] ?? []);
+            $liveReadMeta['remote_constraints'] = $plan->remoteConstraints;
+            $liveReadMeta['local_constraints'] = $plan->localConstraints;
+            $liveReadMeta['unsupported_constraints'] = $plan->unsupportedConstraints;
+            $liveReadMeta['product_mapped_count'] = count($items);
+            $confirmedEmpty = count($items) === 0 && ($liveReadMeta['confirmed_empty'] ?? false) === true;
+            $fallbackTriggered = $confirmedEmpty && $hasNextCandidate;
+            $attempt = [
+                'type' => $candidate['type'],
+                'text' => $candidate['text'],
+                'count' => count($items),
+                'confirmed_empty' => $confirmedEmpty,
+                'http_status' => $result->httpStatus,
+                'fallback_triggered' => $fallbackTriggered,
+            ];
+            $attempts[] = $attempt;
+            $this->logSearchAttempt($source, $attemptIndex + 1, $candidate, count($items), $confirmedEmpty, $result->httpStatus, $fallbackTriggered, $remoteParameter);
+            $selectedCandidate = $candidate;
+
+            $this->cycleLogger->event('search_catalog.result.mapped', [
+                'bot_id' => $bot->id,
+                'team_id' => $bot->team_id,
+                'operation_id' => $operation->operation->id,
+                'operation' => $operation->operation->key,
+                'normalized_search_text' => $query->searchText,
+                'product_mapped_count' => count($items),
+                'live_read_meta' => $liveReadMeta,
+            ]);
+
+            if (! $fallbackTriggered) {
+                $liveReadMeta['attempts'] = $attempts;
+                $liveReadMeta['selected_query'] = $selectedCandidate['text'];
+
+                return ToolResult::success(
+                    ['ok' => true, 'search' => ['dataset' => 'live', 'count' => count($items), 'items' => $items]],
+                    [
+                        'attempts' => $attempts,
+                        'selected_query' => $selectedCandidate['text'],
+                        'card_source' => ['live_items' => $items],
+                        'live_read' => $liveReadMeta,
+                    ],
+                );
+            }
         }
 
-        $items = $this->normalizeLiveItems((array) ($result->data['records'] ?? []));
-        $liveReadMeta = (array) ($result->data['meta'] ?? []);
-        $liveReadMeta['product_mapped_count'] = count($items);
-
-        logger()->info('Live catalog search products mapped.', [
-            'bot_id' => $bot->id,
-            'team_id' => $bot->team_id,
-            'operation_id' => $operation->operation->id,
-            'operation' => $operation->operation->key,
-            'normalized_search_text' => $query->searchText,
-            'product_mapped_count' => count($items),
-            'live_read_meta' => $liveReadMeta,
-        ]);
-
-        return ToolResult::success(
-            ['ok' => true, 'search' => ['dataset' => 'live', 'count' => count($items), 'items' => $items]],
-            ['card_source' => ['live_items' => $items], 'live_read' => $liveReadMeta],
-        );
+        return ToolResult::failure('search_unavailable', 'The catalog search is temporarily unavailable.');
     }
 
     /**
@@ -369,6 +753,117 @@ class SearchCatalogTool implements BotTool
         return null;
     }
 
+    private function searchText(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $text = trim($value);
+
+        return $text !== '' ? $text : null;
+    }
+
+    /**
+     * @return list<array{type: string, text: string|null}>
+     */
+    private function searchCandidates(?string $originalSearchText, ?string $canonicalSearchText, ?string $relaxedSearchText): array
+    {
+        $candidates = [];
+
+        if ($originalSearchText !== null) {
+            $candidates[] = ['type' => 'original', 'text' => $originalSearchText];
+        }
+
+        if ($canonicalSearchText !== null
+            && ! $this->equivalentSearchText($originalSearchText, $canonicalSearchText)) {
+            $candidates[] = ['type' => 'canonical_fallback', 'text' => $canonicalSearchText];
+        }
+
+        $relaxedAlreadyPresent = false;
+        foreach ($candidates as $candidate) {
+            if ($this->equivalentSearchText($candidate['text'], $relaxedSearchText)) {
+                $relaxedAlreadyPresent = true;
+
+                break;
+            }
+        }
+
+        if ($relaxedSearchText !== null && ! $relaxedAlreadyPresent) {
+            $candidates[] = ['type' => 'relaxed_core', 'text' => $relaxedSearchText];
+        }
+
+        return $candidates !== []
+            ? array_slice($candidates, 0, 3)
+            : [['type' => 'canonical', 'text' => null]];
+    }
+
+    private function relaxedSearchText(?string $canonicalSearchText): ?string
+    {
+        if ($canonicalSearchText === null) {
+            return null;
+        }
+
+        preg_match_all('/[\p{L}\p{N}][\p{L}\p{N}_.-]*/u', $canonicalSearchText, $matches);
+        $tokens = $matches[0];
+
+        if (count($tokens) !== 2 || preg_match('/\d/u', (string) $tokens[1]) === 1) {
+            return null;
+        }
+
+        return (string) $tokens[1];
+    }
+
+    private function equivalentSearchText(?string $left, ?string $right): bool
+    {
+        if ($left === null || $right === null) {
+            return $left === $right;
+        }
+
+        if (trim($left) === trim($right)) {
+            return true;
+        }
+
+        if ($this->looksLikeExactIdentifier($left) || $this->looksLikeExactIdentifier($right)) {
+            return false;
+        }
+
+        return mb_strtolower(trim($left)) === mb_strtolower(trim($right));
+    }
+
+    private function looksLikeExactIdentifier(string $value): bool
+    {
+        return preg_match('/^(?=.*\d)[A-Za-z0-9][A-Za-z0-9._-]*$/', trim($value)) === 1;
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     * @param  array{type: string, text: string|null}  $candidate
+     */
+    private function logSearchAttempt(
+        array $source,
+        int $attemptNumber,
+        array $candidate,
+        ?int $resultCount,
+        bool $confirmedEmpty,
+        ?int $httpStatus,
+        bool $fallbackTriggered,
+        ?string $remoteParameter = null,
+    ): void {
+        $this->cycleLogger->event('search_catalog.attempt', [
+            'source' => $this->sourceLog($source),
+            'source_mode' => $source['mode'] ?? null,
+            'attempt_number' => $attemptNumber,
+            'attempt_type' => $candidate['type'],
+            'query_text' => $candidate['text'],
+            'remote_parameter' => $remoteParameter,
+            'result_count' => $resultCount,
+            'confirmed_empty' => $confirmedEmpty,
+            'http_status' => $httpStatus,
+            'fallback_triggered' => $fallbackTriggered,
+        ]);
+    }
+
     /**
      * @param  array<int|string, mixed>  $data
      * @return list<array<string, mixed>>
@@ -412,5 +907,19 @@ class SearchCatalogTool implements BotTool
                 'badge' => $item['badge'] ?? null,
             ];
         }, $items), static fn (?array $item): bool => is_array($item) && is_scalar($item['title'] ?? null)));
+    }
+
+    /** @return array<string, mixed> */
+    private function datasetRecordValues(DatasetRecord $record): array
+    {
+        $payload = [];
+        $recordPayload = $record->getAttribute('payload');
+        foreach (is_array($recordPayload) ? $recordPayload : [] as $key => $value) {
+            if (is_string($key)) {
+                $payload[$key] = $value;
+            }
+        }
+
+        return [...$payload, 'searchable_text' => (string) $record->searchable_text];
     }
 }

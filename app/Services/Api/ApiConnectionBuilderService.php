@@ -344,8 +344,9 @@ class ApiConnectionBuilderService
             $this->addParameter($row, $properties, $required, $requestMapping, 'body');
         }
 
-        if (is_array($input['live_query'] ?? null)) {
-            $liveQuery = $input['live_query'];
+        $liveQuery = $this->liveQueryInput($input);
+
+        if ($liveQuery !== []) {
             $searchText = trim((string) ($liveQuery['search_text'] ?? ''));
             if ($searchText !== '') {
                 $requestMapping['live_query']['search_text'] = $searchText;
@@ -361,6 +362,39 @@ class ApiConnectionBuilderService
                 if ($field !== '' && $operator !== '' && $remote !== '') {
                     $requestMapping['live_query']['filters'][$field][$operator] = $remote;
                 }
+            }
+
+            foreach ((array) ($liveQuery['constraints'] ?? []) as $constraint) {
+                if (! is_array($constraint)) {
+                    continue;
+                }
+
+                $type = trim((string) ($constraint['type'] ?? $constraint['semantic_field'] ?? ''));
+                $operator = trim((string) ($constraint['operator'] ?? 'eq'));
+                $strategy = trim((string) ($constraint['strategy'] ?? 'single_parameter'));
+
+                if ($type === '' || $operator === '' || ! in_array($strategy, ['single_parameter', 'range_parameters'], true)) {
+                    continue;
+                }
+
+                $mapping = ['strategy' => $strategy];
+                if ($strategy === 'single_parameter') {
+                    $remote = trim((string) ($constraint['remote_parameter'] ?? $constraint['remote'] ?? ''));
+                    if ($remote === '') {
+                        continue;
+                    }
+                    $mapping['remote_parameter'] = $remote;
+                } else {
+                    $from = trim((string) ($constraint['remote_from_parameter'] ?? $constraint['from_parameter'] ?? ''));
+                    $to = trim((string) ($constraint['remote_to_parameter'] ?? $constraint['to_parameter'] ?? ''));
+                    if ($from === '' && $to === '') {
+                        continue;
+                    }
+                    $mapping['remote_from_parameter'] = $from;
+                    $mapping['remote_to_parameter'] = $to;
+                }
+
+                $requestMapping['live_query']['constraints'][$type][$operator] = $mapping;
             }
         }
 
@@ -394,6 +428,37 @@ class ApiConnectionBuilderService
             'timeout_ms' => (int) ($input['timeout_ms'] ?? 10000),
             'is_enabled' => (bool) ($input['is_enabled'] ?? true),
         ];
+    }
+
+    /**
+     * Normalize the live-search form payload while keeping text and filters separate.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function liveQueryInput(array $input): array
+    {
+        $value = $input['live_query'] ?? $input['liveQuery'] ?? null;
+        $liveQuery = is_array($value) ? $value : [];
+        $searchText = $liveQuery['search_text'] ?? $liveQuery['searchText'] ?? $input['remote_search_text_parameter'] ?? $input['search_text_parameter'] ?? null;
+
+        if (is_string($searchText)) {
+            $liveQuery['search_text'] = $searchText;
+        }
+
+        $filters = $liveQuery['filters'] ?? $liveQuery['filterMappings'] ?? null;
+
+        if (is_array($filters)) {
+            $liveQuery['filters'] = $filters;
+        }
+
+        $constraints = $liveQuery['constraints'] ?? $liveQuery['constraintMappings'] ?? null;
+
+        if (is_array($constraints)) {
+            $liveQuery['constraints'] = $constraints;
+        }
+
+        return $liveQuery;
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Services\Imports;
 use App\Models\ApiOperation;
 use App\Models\DataSource;
 use App\Models\DataSourceCredential;
+use App\Services\Conversations\ConversationCycleLogger;
 use App\Services\Imports\Exceptions\ImportException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -17,6 +18,8 @@ use Throwable;
 
 class RestApiRequestExecutor
 {
+    public function __construct(private readonly ?ConversationCycleLogger $cycleLogger = null) {}
+
     /**
      * Execute one safe JSON GET request.
      *
@@ -124,7 +127,7 @@ class RestApiRequestExecutor
         }
 
         try {
-            logger()->info('REST API request started.', [
+            $requestLog = [
                 'operation_id' => $operation->id,
                 'operation' => $operation->key,
                 'source_id' => $dataSource->id,
@@ -132,10 +135,27 @@ class RestApiRequestExecutor
                 'url' => $this->debugUrl($url),
                 'query' => $this->debugValue($query),
                 'body' => $this->debugValue($payload),
+            ];
+            logger()->info('REST API request started.', $requestLog);
+            $this->cycleLogger?->apiRequest([
+                ...$requestLog,
+                'url' => $url,
+                'query' => $query,
+                'body' => $payload,
+                'request_method' => Str::upper($method),
             ]);
 
             $response = $request->send(Str::upper($method), $url, $options);
         } catch (ConnectionException $exception) {
+            $this->cycleLogger?->event('live_api.failed', [
+                'operation_id' => $operation->id,
+                'operation' => $operation->key,
+                'source_id' => $dataSource->id,
+                'method' => Str::upper($method),
+                'url' => $url,
+                'status' => null,
+                'exception' => $exception::class,
+            ], 'warning');
             logger()->warning('REST API request could not connect.', [
                 'operation_id' => $operation->id,
                 'operation' => $operation->key,
@@ -152,6 +172,15 @@ class RestApiRequestExecutor
             );
         } catch (RequestException $exception) {
             $status = $exception->response->status();
+            $this->cycleLogger?->event('live_api.failed', [
+                'operation_id' => $operation->id,
+                'operation' => $operation->key,
+                'source_id' => $dataSource->id,
+                'method' => Str::upper($method),
+                'url' => $url,
+                'status' => $status,
+                'exception' => $exception::class,
+            ], 'warning');
 
             logger()->warning('REST API request returned an unsuccessful status.', [
                 'operation_id' => $operation->id,
@@ -177,6 +206,17 @@ class RestApiRequestExecutor
             'content_type' => $response->header('content-type'),
             'content_length' => $response->header('content-length'),
         ]);
+        $rawBody = $response->body();
+        $rawData = json_decode($rawBody, true);
+        $this->cycleLogger?->apiResponse([
+            'status' => $response->status(),
+            'content_type' => $response->header('content-type'),
+            'content_length' => $response->header('content-length'),
+            'raw_response_item_count' => is_array($rawData) ? $this->rawResponseItemCount($rawData) : 0,
+            'raw_top_level_keys' => is_array($rawData) && ! array_is_list($rawData) ? array_keys($rawData) : [],
+            'response_body' => config('chatbot_runtime.log_response_body', false) ? $rawData : '[DISABLED]',
+            'response_body_bytes' => strlen($rawBody),
+        ]);
 
         $maxLiveResponseBytes = data_get($operation->response_mapping, 'sync_mode') === 'full_snapshot'
             ? 0
@@ -194,6 +234,14 @@ class RestApiRequestExecutor
 
             return $result;
         } catch (ImportException $exception) {
+            $this->cycleLogger?->event('live_api.response.rejected', [
+                'operation_id' => $operation->id,
+                'operation' => $operation->key,
+                'source_id' => $dataSource->id,
+                'status' => $response->status(),
+                'reason' => $exception->getMessage(),
+                'exception' => $exception::class,
+            ], 'warning');
             logger()->warning('REST API response was rejected.', [
                 'operation_id' => $operation->id,
                 'operation' => $operation->key,
@@ -543,6 +591,22 @@ class RestApiRequestExecutor
         }
 
         return is_scalar($value) || $value === null ? $value : '[REDACTED]';
+    }
+
+    /** @param array<int|string, mixed> $response */
+    private function rawResponseItemCount(array $response): int
+    {
+        if (array_is_list($response)) {
+            return count($response);
+        }
+
+        foreach (['data', 'items', 'products', 'results'] as $key) {
+            if (is_array($response[$key] ?? null) && array_is_list($response[$key])) {
+                return count($response[$key]);
+            }
+        }
+
+        return 0;
     }
 
     private function isForbiddenIp(string $host): bool

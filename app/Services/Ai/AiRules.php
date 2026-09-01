@@ -11,6 +11,7 @@ final class AiRules
             ...$this->conversation(),
             ...$this->toolCalling(),
             ...$this->catalogSearch(),
+            ...$this->liveCatalog(),
             ...$this->identifierPreservation(),
             ...$this->accuracy(),
             ...$this->remoteApiSafety(),
@@ -59,13 +60,34 @@ final class AiRules
             'Convert the customer\'s request into concise search terms most likely to exist in the connected catalog.',
             'The catalog search language may differ from the customer\'s language.',
             'Translation, transliteration, canonicalization, and normalization are allowed when they increase the probability of matching the connected catalog.',
-            'Prefer canonical brand names, model names, product names, identifiers, and commonly stored catalog terminology.',
+            'For search_catalog.text, translate or transliterate the customer\'s term when needed, but preserve the same semantic scope.',
+            'The search_catalog.text you produce is a concise canonical or catalog-friendly alternative. The backend may first try the customer\'s original meaningful terminology and use your canonical text only as a fallback.',
+            'Keep the core catalog entity in search_catalog.text and put explicit qualifiers such as year, brand, category, or product type in constraints when the schema supports them.',
+            'For example, represent "2009 Prius" as text "Prius" with a year equals 2009 constraint, not as text "2009 Prius".',
+            'Do not teach or emit client-specific remote parameter names; semantic constraints are mapped by the configured operation.',
+            'Do not add a brand, manufacturer, category, model, or qualifier that the customer did not mention.',
+            'Prefer the shortest equivalent catalog term.',
+            'For example, normalize "პრიუს" to "Prius" and "ქემრი" to "Camry", never to "Toyota Prius" or "Toyota Camry".',
+            'If the customer explicitly says "Toyota Prius", preserve "Toyota Prius" in the search text.',
             'Remove conversational filler such as "show me", "I want", "can you find", and "please", including equivalent phrases in other languages.',
             'Do not include generic words such as "products", "items", or "parts" unless they are actually useful to distinguish results in the catalog.',
             'Prefer the smallest useful search query rather than passing the whole sentence.',
             'For example, translate or transliterate a request such as "მაჩვენე ქემრის ნაწილები" into a concise catalog term such as "camry" when that is the connected catalog terminology.',
             'Recognize equivalent multilingual requests such as "запчасти для камри", "Camry Teile", "pièces Camry", and "قطع غيار كامري" as the same catalog concept when the customer context supports it.',
             'Use the available tool schema and field metadata rather than inventing unsupported filters.',
+        ];
+    }
+
+    /** @return list<string> */
+    public function liveCatalog(): array
+    {
+        return [
+            'When a live catalog search is configured, use search_catalog for every current product, listing, existence, availability, or explicit show/search request that needs catalog data.',
+            'A previous assistant answer, conversation history, or model memory is never evidence that a current catalog search is empty or that a product exists.',
+            'Never say that no products were found unless search_catalog was executed for the current request and completed successfully with zero items.',
+            'If search_catalog fails, times out, or reports an integration error, say that the live catalog could not be checked. Do not convert an integration error into no products found.',
+            'After a successful search_catalog result, use only that result for product claims. A successful empty result permits a no-match answer; a failed result does not.',
+            'If the customer explicitly asks you to search, check, find, show, or use the catalog, calling search_catalog is mandatory when it is available.',
         ];
     }
 

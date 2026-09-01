@@ -11,6 +11,31 @@ use Illuminate\Validation\Validator;
 
 class StoreApiOperationRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $liveQuery = $this->input('live_query');
+
+        if (! is_array($liveQuery) && is_array($this->input('liveQuery'))) {
+            $liveQuery = $this->input('liveQuery');
+        }
+
+        if (! is_array($liveQuery)) {
+            $liveQuery = [];
+        }
+
+        if (! array_key_exists('search_text', $liveQuery) && is_string($liveQuery['searchText'] ?? null)) {
+            $liveQuery['search_text'] = $liveQuery['searchText'];
+        }
+
+        if (! array_key_exists('filters', $liveQuery) && is_array($liveQuery['filterMappings'] ?? null)) {
+            $liveQuery['filters'] = $liveQuery['filterMappings'];
+        }
+
+        if ($liveQuery !== [] || $this->has('live_query') || $this->has('liveQuery')) {
+            $this->merge(['live_query' => $liveQuery]);
+        }
+    }
+
     public function authorize(): bool
     {
         $dataSource = $this->route('data_source');
@@ -35,6 +60,19 @@ class StoreApiOperationRequest extends FormRequest
             'request_mapping' => ['nullable', 'array'],
             'query_parameters' => ['nullable', 'array'],
             'body_parameters' => ['nullable', 'array'],
+            'live_query' => ['nullable', 'array'],
+            'live_query.search_text' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]{0,254}$/'],
+            'live_query.filters' => ['nullable', 'array'],
+            'live_query.filters.*.field' => ['required', 'string', 'max:255'],
+            'live_query.filters.*.operator' => ['required', 'string', Rule::in(['eq', 'neq', 'contains', 'starts_with', 'ends_with', 'in', 'gt', 'gte', 'lt', 'lte', 'between', 'is_null', 'is_not_null'])],
+            'live_query.filters.*.remote' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]{0,254}$/'],
+            'live_query.constraints' => ['nullable', 'array'],
+            'live_query.constraints.*.type' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]{0,99}$/'],
+            'live_query.constraints.*.operator' => ['required', 'string', Rule::in(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between'])],
+            'live_query.constraints.*.strategy' => ['required', Rule::in(['single_parameter', 'range_parameters'])],
+            'live_query.constraints.*.remote_parameter' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]{0,254}$/'],
+            'live_query.constraints.*.remote_from_parameter' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]{0,254}$/'],
+            'live_query.constraints.*.remote_to_parameter' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_.-]{0,254}$/'],
             'response_fields' => ['nullable', 'array'],
             'response_fields.*.type' => ['nullable', Rule::in(['string', 'integer', 'decimal', 'boolean', 'date', 'datetime'])],
             'response_fields.*.searchable' => ['nullable', 'boolean'],

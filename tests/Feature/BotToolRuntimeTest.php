@@ -8,6 +8,8 @@ use App\Models\Bot;
 use App\Models\BotApiOperation;
 use App\Models\BotDataset;
 use App\Models\Dataset;
+use App\Models\DatasetField;
+use App\Models\DatasetRecord;
 use App\Models\DataSource;
 use App\Models\Message;
 use App\Models\Team;
@@ -79,6 +81,27 @@ test('the registry exposes catalog search for a valid live operation without a d
         ->and($registry->find($bot, 'get_product_details'))->toBeNull();
 });
 
+test('search_catalog exposes only product datasets and never knowledge datasets', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    $knowledge = Dataset::factory()->ready()->create([
+        'team_id' => $team->id,
+        'slug' => 'company-knowledge',
+        'entity_type' => 'knowledge',
+    ]);
+    BotDataset::factory()->create([
+        'bot_id' => $bot->id,
+        'dataset_id' => $knowledge->id,
+        'is_enabled' => true,
+    ]);
+
+    $definition = app(BotToolRegistry::class)->find($bot, 'search_catalog')->schema($bot);
+
+    expect($definition['properties']['dataset']['enum'])->toContain(null)
+        ->toContain($bot->datasets()->where('slug', '!=', 'company-knowledge')->value('slug'))
+        ->not->toContain('company-knowledge')
+        ->and($definition['required'])->toEqualCanonicalizing(array_keys($definition['properties']));
+});
+
 test('live catalog mappings translate canonical search arguments to common API parameter names', function () {
     botToolRegistryContext(false);
     $operation = ApiOperation::factory()->make([
@@ -116,7 +139,7 @@ test('live catalog mappings translate canonical search arguments to common API p
     ]);
 });
 
-test('live catalog search sends canonical Camry and Prius terms through the remote mapping', function () {
+test('live catalog search tries the original term before the canonical remote mapping fallback', function () {
     [, $team, $bot] = botToolRegistryContext(false);
     $source = DataSource::factory()->ready()->create([
         'team_id' => $team->id,
@@ -130,12 +153,16 @@ test('live catalog search sends canonical Camry and Prius terms through the remo
         'path' => '/products',
         'request_schema' => [
             'type' => 'object',
-            'properties' => ['search' => ['type' => 'string']],
+            'properties' => [],
             'required' => [],
         ],
         'request_mapping' => [
-            'query' => ['search' => 'q'],
-            'live_query' => ['search_text' => 'q'],
+            'query' => [],
+            'fixed' => ['query' => ['per_page' => 300]],
+            'live_query' => [
+                'search_text' => 'name',
+                'constraints' => ['year' => ['eq' => 'y']],
+            ],
         ],
         'response_mapping' => [
             'collection' => [
@@ -157,9 +184,18 @@ test('live catalog search sends canonical Camry and Prius terms through the remo
     ]);
 
     Http::preventStrayRequests();
+    $queries = [];
     Http::fake([
-        'https://api.example.test/*' => function ($request) {
-            $isPrius = str_contains($request->url(), 'q=prius');
+        'https://api.example.test/*' => function ($request) use (&$queries) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+            $searchText = (string) ($query['name'] ?? '');
+            $queries[] = $searchText;
+            $isCamry = strtolower($searchText) === 'camry';
+            $isPrius = strtolower($searchText) === 'prius';
+
+            if (! $isCamry && ! $isPrius) {
+                return Http::response(['data' => []]);
+            }
 
             return Http::response([
                 'data' => [[
@@ -206,8 +242,45 @@ test('live catalog search sends canonical Camry and Prius terms through the remo
         ),
     );
 
-    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'q=camry'));
-    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'q=prius'));
+    $yearResult = $tool->execute(
+        $bot,
+        [
+            'dataset' => null,
+            'text' => 'Prius',
+            'filters' => [],
+            'constraints' => [['type' => 'year', 'operator' => 'eq', 'value' => 2009]],
+            'sorts' => [],
+            'limit' => 10,
+            'result_count' => null,
+        ],
+        ToolExecutionContext::forBot(
+            $bot,
+            userMessage: new Message(['content' => '2009 Prius']),
+            mode: RuntimeMode::Test,
+        ),
+    );
+
+    $relaxedResult = $tool->execute(
+        $bot,
+        [
+            'dataset' => null,
+            'text' => 'Toyota Prius',
+            'filters' => [],
+            'sorts' => [],
+            'limit' => 10,
+            'result_count' => null,
+        ],
+        ToolExecutionContext::forBot(
+            $bot,
+            userMessage: new Message(['content' => 'show me toyota prius product']),
+            mode: RuntimeMode::Test,
+        ),
+    );
+
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'name=camry'));
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'name=prius'));
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'per_page=300'));
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'y=2009'));
 
     expect($camryResult->data['search']['count'])->toBe(1)
         ->and($camryResult->data['search']['items'][0]['title'])->toBe('07-09 CAMRY - ბამპერი (წინა)')
@@ -220,7 +293,87 @@ test('live catalog search sends canonical Camry and Prius terms through the remo
             'product_mapped_count' => 1,
         ])
         ->and($priusResult->data['search']['count'])->toBe(1)
-        ->and($priusResult->data['search']['items'][0]['title'])->toBe('TOYOTA PRIUS - ფარი');
+        ->and($priusResult->data['search']['items'][0]['title'])->toBe('TOYOTA PRIUS - ფარი')
+        ->and($queries)->toBe(['ქემრი', 'camry', 'პრისუ', 'prius', 'prius', 'toyota prius', 'Prius'])
+        ->and($camryResult->metadata['attempts'])->toMatchArray([
+            ['type' => 'original', 'text' => 'ქემრი', 'count' => 0, 'confirmed_empty' => true, 'fallback_triggered' => true],
+            ['type' => 'canonical_fallback', 'text' => 'camry', 'count' => 1, 'confirmed_empty' => false, 'fallback_triggered' => false],
+        ])
+        ->and($priusResult->metadata['selected_query'])->toBe('prius')
+        ->and($yearResult->data['search']['count'])->toBe(1)
+        ->and($yearResult->metadata['live_read']['remote_constraints'][0]['parameters'])->toBe(['y' => 2009])
+        ->and($relaxedResult->data['search']['count'])->toBe(1)
+        ->and($relaxedResult->metadata['selected_query'])->toBe('Prius');
+});
+
+test('search_catalog federates eligible product datasets and live API sources', function () {
+    [, $team, $bot] = botToolRegistryContext();
+    $dataset = $bot->datasets()->firstOrFail();
+    DatasetField::factory()->create([
+        'dataset_id' => $dataset->id,
+        'key' => 'name',
+        'label' => 'Name',
+        'data_type' => 'string',
+        'is_searchable' => true,
+        'is_displayable' => true,
+    ]);
+    DatasetRecord::factory()->create([
+        'dataset_id' => $dataset->id,
+        'external_id' => '35',
+        'payload' => ['name' => 'Indexed CAMRY part'],
+        'searchable_text' => 'Indexed CAMRY part',
+    ]);
+
+    $source = DataSource::factory()->ready()->create([
+        'team_id' => $team->id,
+        'type' => 'rest_api',
+        'config' => ['base_url' => 'https://api.example.test'],
+    ]);
+    $operation = ApiOperation::factory()->create([
+        'data_source_id' => $source->id,
+        'execution_mode' => ApiOperationMode::Read->value,
+        'method' => 'GET',
+        'path' => '/products',
+        'request_schema' => ['type' => 'object', 'properties' => [], 'required' => []],
+        'request_mapping' => [
+            'query' => [],
+            'fixed' => ['query' => ['per_page' => 300]],
+            'live_query' => ['search_text' => 'name'],
+        ],
+        'response_mapping' => [
+            'collection' => [
+                'path' => 'data',
+                'fields' => [
+                    'id' => ['path' => 'id', 'type' => 'integer', 'required' => true],
+                    'title' => ['path' => 'name', 'type' => 'string', 'required' => true, 'searchable' => true],
+                ],
+            ],
+            'pagination' => ['type' => 'none'],
+        ],
+    ]);
+    BotApiOperation::factory()->create([
+        'bot_id' => $bot->id,
+        'api_operation_id' => $operation->id,
+        'tool_name' => 'search_catalog',
+        'is_enabled' => true,
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.example.test/*' => Http::response([
+            'data' => [['id' => 35, 'name' => 'Live CAMRY part']],
+        ]),
+    ]);
+
+    $result = app(BotToolRegistry::class)->find($bot, 'search_catalog')->execute(
+        $bot,
+        ['dataset' => null, 'text' => 'camry', 'filters' => [], 'sorts' => [], 'limit' => 10, 'result_count' => null],
+        ToolExecutionContext::forBot($bot, mode: RuntimeMode::Test),
+    );
+
+    expect($result->data['search']['count'])->toBe(2)
+        ->and($result->metadata['source_results'])->toHaveCount(2)
+        ->and($result->metadata['source_errors'])->toBe([]);
 });
 
 test('the registered tool produces a strict schema without internal implementation details', function () {

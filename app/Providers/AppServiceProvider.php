@@ -10,6 +10,7 @@ use App\Services\Channels\Contracts\EmailProviderClient;
 use App\Services\Channels\Contracts\SmsProviderClient;
 use App\Services\Channels\PostmarkEmailClient;
 use App\Services\Channels\TwilioSmsClient;
+use App\Services\Conversations\ConversationCycleLogger;
 use App\Services\Search\Contracts\SearchEngine;
 use App\Services\Search\Engines\PostgresSearchEngine;
 use App\Services\Search\Engines\TypesenseSearchEngine;
@@ -35,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->scoped(ConversationCycleLogger::class);
         $this->app->bind(AiClient::class, OpenAiResponsesClient::class);
         $this->app->bind(SmsProviderClient::class, TwilioSmsClient::class);
         $this->app->bind(EmailProviderClient::class, PostmarkEmailClient::class);

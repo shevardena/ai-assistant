@@ -81,8 +81,10 @@ class AiSearchQueryFactory
             $sorts[] = new SearchSort($sort['field'], $direction);
         }
 
-        $limit = $arguments['limit'] ?? null;
-        $maxResults = min(max(1, (int) config('openai.max_results', 10)), 100);
+        $limit = $arguments['candidate_limit'] ?? $arguments['limit'] ?? null;
+        $maxResults = array_key_exists('candidate_limit', $arguments)
+            ? 100
+            : min(max(1, (int) config('openai.max_results', 10)), 100);
 
         if (! is_int($limit) || $limit < 1) {
             throw new AiException('The search result limit is invalid.');

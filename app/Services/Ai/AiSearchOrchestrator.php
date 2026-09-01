@@ -11,7 +11,9 @@ use App\Services\Ai\Tools\Contracts\BotTool;
 use App\Services\Ai\Tools\ToolExecutionContext;
 use App\Services\Ai\Tools\ToolResult;
 use App\Services\Conversations\Blocks\ConversationBlockNormalizer;
+use App\Services\Conversations\ConversationCycleLogger;
 use App\Services\Conversations\ConversationHandoffService;
+use Illuminate\Support\Str;
 use JsonException;
 use Throwable;
 
@@ -24,6 +26,7 @@ class AiSearchOrchestrator
         private readonly AiToolSchemaBuilder $toolSchemaBuilder,
         private readonly BotToolRegistry $toolRegistry,
         private readonly ConversationBlockNormalizer $blockNormalizer,
+        private readonly ConversationCycleLogger $cycleLogger,
     ) {}
 
     /**
@@ -80,13 +83,37 @@ class AiSearchOrchestrator
         $actionProposals = [];
         $usage = null;
         $maxRounds = max(1, (int) config('openai.max_tool_rounds', 3));
+        $forceCatalogSearch = false;
+        $hasCatalogSearchTool = collect($tools)->contains(
+            fn (array $tool): bool => ($tool['name'] ?? null) === 'search_catalog',
+        );
 
         for ($round = 0; $round < $maxRounds; $round++) {
+            $this->cycleLogger->aiRequest([
+                'round' => $round + 1,
+                'model' => config('openai.model'),
+                'tool_choice' => $forceCatalogSearch
+                    ? ['type' => 'function', 'name' => 'search_catalog']
+                    : 'auto',
+                'parallel_tool_calls' => false,
+                'tool_names' => array_map(
+                    static fn (array $tool): string => (string) data_get($tool, 'name', 'unknown'),
+                    $tools,
+                ),
+                'input_message_count' => count($input),
+                'input' => config('chatbot_runtime.log_full_prompt', false) ? $input : null,
+                'instructions' => config('chatbot_runtime.log_full_prompt', false) ? $instructions : null,
+                'instructions_sha256' => hash('sha256', $instructions),
+                'instructions_length' => strlen($instructions),
+            ]);
+            $aiStartedAt = hrtime(true);
             $response = $this->client->createResponse([
                 'instructions' => $instructions,
                 'input' => $input,
                 'tools' => $tools,
-                'tool_choice' => 'auto',
+                'tool_choice' => $forceCatalogSearch
+                    ? ['type' => 'function', 'name' => 'search_catalog']
+                    : 'auto',
                 'parallel_tool_calls' => false,
             ]);
             $usage = $response['usage'] ?? $usage;
@@ -95,12 +122,63 @@ class AiSearchOrchestrator
                 $output,
                 static fn (array $item): bool => ($item['type'] ?? null) === 'function_call',
             ));
+            $this->cycleLogger->aiResponse([
+                'round' => $round + 1,
+                'duration_ms' => (int) ((hrtime(true) - $aiStartedAt) / 1_000_000),
+                'provider_response_id' => $response['id'] ?? null,
+                'status' => $response['status'] ?? null,
+                'finish_reason' => $response['finish_reason'] ?? null,
+                'output_text' => $response['output_text'] ?? null,
+                'tool_calls' => array_map(fn (array $toolCall): array => [
+                    'call_id' => $toolCall['call_id'] ?? null,
+                    'name' => $toolCall['name'] ?? null,
+                    'arguments' => $this->decodedArguments($toolCall['arguments'] ?? null),
+                ], $toolCalls),
+                'usage' => $response['usage'] ?? null,
+            ]);
 
             if ($toolCalls === []) {
                 $answer = $this->answer($response);
 
                 if ($answer === '') {
                     throw new AiException('OpenAI returned no final answer.');
+                }
+
+                if ($hasCatalogSearchTool
+                    && $this->looksLikeNoResultsClaim($answer)
+                    && ! $this->hasCompletedEmptyCatalogSearch($toolOutcomes)) {
+                    if (! $forceCatalogSearch) {
+                        $forceCatalogSearch = true;
+                        $this->cycleLogger->event('grounding.enforcement.retry', [
+                            'reason' => 'The model returned a catalog-dependent no-results claim without search_catalog.',
+                            'answer' => $answer,
+                        ], 'warning');
+                        $input[] = [
+                            'role' => 'user',
+                            'content' => 'The current request requires live catalog verification. Call search_catalog now; do not answer from memory or history.',
+                        ];
+
+                        continue;
+                    }
+
+                    return new AiSearchResponse(
+                        $this->catalogUnavailableMessage($message),
+                        $toolCallsCount,
+                        $searches,
+                        $usage,
+                        $cardSources,
+                        $blocks,
+                        [['tool' => 'search_catalog', 'outcome' => 'non_knowledge_failure']],
+                        $actionProposals,
+                    );
+                }
+
+                if ($this->hasFailedCatalogSearch($toolOutcomes) && $this->looksLikeNoResultsClaim($answer)) {
+                    $this->cycleLogger->event('grounding.enforcement.replaced_answer', [
+                        'reason' => 'The model converted a failed catalog search into a no-results claim.',
+                        'answer' => $answer,
+                    ], 'warning');
+                    $answer = $this->catalogUnavailableMessage($message);
                 }
 
                 return new AiSearchResponse(
@@ -119,8 +197,28 @@ class AiSearchOrchestrator
 
             foreach ($toolCalls as $toolCall) {
                 $toolCallsCount++;
+                $toolStartedAt = hrtime(true);
+                $this->cycleLogger->toolStarted([
+                    'tool' => $toolCall['name'] ?? 'unknown',
+                    'call_id' => $toolCall['call_id'] ?? null,
+                    'arguments' => $this->decodedArguments($toolCall['arguments'] ?? null),
+                ]);
                 $result = $this->executeToolCall($bot, $toolCall, $executionContext);
+                $forceCatalogSearch = false;
                 $toolOutcomes[] = $this->toolOutcome($toolCall, $result);
+                $this->cycleLogger->toolCompleted([
+                    'tool' => $toolCall['name'] ?? 'unknown',
+                    'call_id' => $toolCall['call_id'] ?? null,
+                    'duration_ms' => (int) ((hrtime(true) - $toolStartedAt) / 1_000_000),
+                    'ok' => $result->data['ok'] ?? false,
+                    'error' => $result->data['error'] ?? null,
+                    'search_count' => is_array($result->data['search']['items'] ?? null)
+                        ? count($result->data['search']['items'])
+                        : null,
+                    'live_read' => $result->metadata['live_read'] ?? null,
+                    'selected_query' => $result->metadata['selected_query'] ?? null,
+                    'search_attempts' => $result->metadata['attempts'] ?? null,
+                ]);
                 $actionProposal = $result->data['action_proposed'] ?? null;
 
                 if (is_string($actionProposal) && $actionProposal !== '') {
@@ -163,6 +261,14 @@ class AiSearchOrchestrator
                     throw new AiException('The search tool returned an invalid result.', previous: $exception);
                 }
 
+                $this->cycleLogger->event('tool.result.prepared_for_model', [
+                    'tool' => $toolCall['name'] ?? 'unknown',
+                    'call_id' => $toolCall['call_id'] ?? null,
+                    'result' => $result->modelData(),
+                    'result_bytes' => strlen($toolOutput),
+                    'result_mode' => 'full',
+                ]);
+
                 $input[] = [
                     'type' => 'function_call_output',
                     'call_id' => is_string($toolCall['call_id'] ?? null) ? $toolCall['call_id'] : '',
@@ -184,9 +290,26 @@ class AiSearchOrchestrator
             'tools' => [],
         ]);
         $usage = $finalResponse['usage'] ?? $usage;
+        $this->cycleLogger->aiResponse([
+            'round' => $maxRounds + 1,
+            'provider_response_id' => $finalResponse['id'] ?? null,
+            'status' => $finalResponse['status'] ?? null,
+            'finish_reason' => $finalResponse['finish_reason'] ?? null,
+            'output_text' => $finalResponse['output_text'] ?? null,
+            'tool_calls' => [],
+            'usage' => $finalResponse['usage'] ?? null,
+        ]);
         $answer = $this->answer($finalResponse);
 
         if ($answer !== '') {
+            if ($this->hasFailedCatalogSearch($toolOutcomes) && $this->looksLikeNoResultsClaim($answer)) {
+                $this->cycleLogger->event('grounding.enforcement.replaced_answer', [
+                    'reason' => 'The model converted a failed catalog search into a no-results claim after the tool-call limit.',
+                    'answer' => $answer,
+                ], 'warning');
+                $answer = $this->catalogUnavailableMessage($message);
+            }
+
             return new AiSearchResponse(
                 $answer,
                 $toolCallsCount,
@@ -215,7 +338,7 @@ class AiSearchOrchestrator
             $nonKnowledgeFailure = $tool !== 'lookup_faq'
                 && $tool !== 'search_catalog';
 
-            if (str_ends_with($error, '_unavailable') || $nonKnowledgeFailure) {
+            if ($tool === 'search_catalog' || str_ends_with($error, '_unavailable') || $nonKnowledgeFailure) {
                 return ['tool' => $tool, 'outcome' => 'non_knowledge_failure'];
             }
 
@@ -346,5 +469,57 @@ class AiSearchOrchestrator
             ->implode('');
 
         return trim($text);
+    }
+
+    private function decodedArguments(mixed $arguments): mixed
+    {
+        if (! is_string($arguments) || trim($arguments) === '') {
+            return $arguments;
+        }
+
+        try {
+            return json_decode($arguments, true, 512, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return '[INVALID_JSON]';
+        }
+    }
+
+    private function looksLikeNoResultsClaim(string $answer): bool
+    {
+        return Str::contains(
+            Str::lower($answer),
+            ['no products', 'not found', 'no matching', 'nothing available', 'არ მოიძებნა', 'ვერ მოიძებნა'],
+        );
+    }
+
+    /** @param list<array{tool: string, outcome: string}> $toolOutcomes */
+    private function hasFailedCatalogSearch(array $toolOutcomes): bool
+    {
+        foreach ($toolOutcomes as $outcome) {
+            if ($outcome['tool'] === 'search_catalog' && $outcome['outcome'] === 'non_knowledge_failure') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param list<array{tool: string, outcome: string}> $toolOutcomes */
+    private function hasCompletedEmptyCatalogSearch(array $toolOutcomes): bool
+    {
+        foreach ($toolOutcomes as $outcome) {
+            if ($outcome['tool'] === 'search_catalog' && $outcome['outcome'] === 'no_results') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function catalogUnavailableMessage(string $message): string
+    {
+        return preg_match('/[\x{10A0}-\x{10FF}]/u', $message) === 1
+            ? 'ბოდიში, ცოცხალი კატალოგის შემოწმება ამჟამად ვერ მოხერხდა.'
+            : 'Sorry, the live catalog could not be checked right now.';
     }
 }

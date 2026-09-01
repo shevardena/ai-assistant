@@ -160,13 +160,20 @@ test('strict tool schema and runtime context expose only bot-authorized logical 
 
     expect($tool['strict'])->toBeTrue()
         ->and($tool['parameters']['additionalProperties'])->toBeFalse()
-        ->and($tool['parameters']['properties']['dataset']['enum'])->toBe(['products'])
+        ->and($tool['parameters']['properties']['dataset']['enum'])->toBe(['products', null])
         ->and($tool['parameters']['properties']['text']['description'])
         ->toContain('broad product listing')
         ->and($tool['parameters']['properties']['limit']['minimum'])->toBe(1)
         ->and($tool['parameters']['properties']['limit']['maximum'])->toBe(10)
         ->and($tool['parameters']['properties']['filters']['items']['required'])
         ->toContain('value')
+        ->and($tool['parameters']['properties']['constraints']['type'])->toBe('array')
+        ->and($tool['parameters']['properties']['constraints']['items'])->toMatchArray([
+            'type' => 'object',
+            'required' => ['field', 'operator', 'value'],
+            'additionalProperties' => false,
+        ])
+        ->and($tool['parameters']['properties']['constraints']['items']['properties']['value'])->toBe(['type' => 'string'])
         ->and(json_encode($context, JSON_THROW_ON_ERROR))->not->toContain('source_path')
         ->and(json_encode($context, JSON_THROW_ON_ERROR))->not->toContain('internal_note');
 });
@@ -273,6 +280,31 @@ test('catalog search honors the AI-selected canonical term for a non-Latin custo
         ->and($response->searches[0]['items'][0]['name'])->toBe('07-09 CAMRY - ბამპერი (წინა)');
 });
 
+test('a catalog no-results claim cannot bypass the available search tool', function () {
+    [, , $bot] = aiRuntimeFixture();
+    $searchCall = searchCatalogCall(text: 'laptop');
+    $arguments = json_decode($searchCall['arguments'], true, 512, JSON_THROW_ON_ERROR);
+    $arguments['filters'] = [];
+    $arguments['sorts'] = [];
+    $searchCall['arguments'] = json_encode($arguments, JSON_THROW_ON_ERROR);
+
+    $fake = fakeAiClient([
+        ['output' => [], 'output_text' => 'No products were found.', 'usage' => null],
+        ['output' => [$searchCall], 'output_text' => null, 'usage' => null],
+        ['output' => [], 'output_text' => 'I found a matching product.', 'usage' => null],
+    ]);
+    app()->instance(AiClient::class, $fake);
+
+    $response = app(AiSearchOrchestrator::class)->run($bot, 'Find a laptop.');
+
+    expect($response->toolCallsCount)->toBe(1)
+        ->and($response->searches)->toHaveCount(1)
+        ->and($fake->payloads[1]['tool_choice'])->toBe([
+            'type' => 'function',
+            'name' => 'search_catalog',
+        ]);
+});
+
 test('unauthorized bot dataset calls are rejected without searching another dataset', function () {
     [, $team, $bot] = aiRuntimeFixture();
     $otherDataset = Dataset::factory()->ready()->create([
@@ -301,11 +333,11 @@ test('unauthorized bot dataset calls are rejected without searching another data
 
     $response = app(AiSearchOrchestrator::class)->run($bot, 'Find something.');
 
-    expect($tool['parameters']['properties']['dataset']['enum'])->toBe(['products'])
+    expect($tool['parameters']['properties']['dataset']['enum'])->toBe(['products', null])
         ->and($response->toolCallsCount)->toBe(1)
         ->and($response->searches)->toBe([])
         ->and($response->toolOutcomes)->toBe([
-            ['tool' => 'search_catalog', 'outcome' => 'invalid'],
+            ['tool' => 'search_catalog', 'outcome' => 'non_knowledge_failure'],
         ])
         ->and(collect($fake->payloads[1]['input'])->contains(
             fn (array $item): bool => ($item['type'] ?? null) === 'function_call_output'
@@ -337,6 +369,32 @@ test('orchestrator classifies a final empty catalog search as no results', funct
     $response = app(AiSearchOrchestrator::class)->run($bot, 'Find a product nobody sells.');
 
     expect($response->searches[0]['count'])->toBe(0)
+        ->and($response->toolOutcomes)->toBe([
+            ['tool' => 'search_catalog', 'outcome' => 'no_results'],
+        ]);
+});
+
+test('a successful empty catalog search does not trigger an identical grounding retry', function () {
+    [, , $bot] = aiRuntimeFixture();
+
+    $fake = fakeAiClient([
+        [
+            'output' => [searchCatalogCall(text: 'does-not-exist')],
+            'output_text' => null,
+            'usage' => null,
+        ],
+        [
+            'output' => [],
+            'output_text' => 'No matching products were found.',
+            'usage' => null,
+        ],
+    ]);
+    app()->instance(AiClient::class, $fake);
+
+    $response = app(AiSearchOrchestrator::class)->run($bot, 'Find a product nobody sells.');
+
+    expect($response->toolCallsCount)->toBe(1)
+        ->and($fake->payloads)->toHaveCount(2)
         ->and($response->toolOutcomes)->toBe([
             ['tool' => 'search_catalog', 'outcome' => 'no_results'],
         ]);

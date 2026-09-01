@@ -232,6 +232,10 @@ test('saving an API operation redirects back to the Inertia data source page', f
             'path' => '/products',
             'response_fields' => [['name' => 'id', 'path' => 'id', 'required' => true]],
             'pagination' => ['type' => 'none'],
+            'live_query' => [
+                'search_text' => 'name',
+                'filters' => [['field' => 'category', 'operator' => 'eq', 'remote' => 'category_name']],
+            ],
         ])
         ->assertRedirect(route('data-sources.show', [
             'current_team' => $team->slug,
@@ -307,6 +311,10 @@ test('an existing API operation opens in the edit form and updates without creat
             'query_parameters' => [['name' => 'per_page', 'source' => 'fixed', 'value' => '20', 'type' => 'integer']],
             'response_fields' => [['name' => 'id', 'path' => 'id', 'required' => true]],
             'pagination' => ['type' => 'none'],
+            'live_query' => [
+                'search_text' => 'name',
+                'filters' => [['field' => 'category', 'operator' => 'eq', 'remote' => 'category_name']],
+            ],
         ])
         ->assertRedirect(route('data-sources.show', [
             'current_team' => $team->slug,
@@ -315,5 +323,21 @@ test('an existing API operation opens in the edit form and updates without creat
 
     expect($source->apiOperations()->count())->toBe(1)
         ->and($operation->fresh()->name)->toBe('Find products live')
+        ->and($operation->fresh()->request_mapping['live_query'])->toBe([
+            'search_text' => 'name',
+            'filters' => ['category' => ['eq' => 'category_name']],
+        ])
         ->and($operation->botApiOperations()->firstOrFail()->tool_name)->toBe('search_catalog');
+
+    $this->actingAs($user)
+        ->get(route('data-sources.api-operations.edit', [
+            'current_team' => $team->slug,
+            'data_source' => $source,
+            'api_operation' => $operation,
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('operation.live_query.search_text', 'name')
+            ->where('operation.live_query.filters.0.field', 'category')
+            ->where('operation.live_query.filters.0.remote', 'category_name'),
+        );
 });

@@ -7,7 +7,7 @@ class AiSearchResponse
     /**
      * @param  list<array<string, mixed>>  $searches
      * @param  array<string, mixed>|null  $usage
-     * @param  list<array{dataset_id: int, record_ids: list<int>}>  $cardSources
+     * @param  list<array<string, mixed>>  $cardSources
      * @param  list<array<string, mixed>>  $blocks
      * @param  list<array{tool: string, outcome: string}>  $toolOutcomes
      * @param  list<string>  $actionProposals

@@ -7,9 +7,16 @@ use Illuminate\Support\Str;
 
 final class LiveReadRecordMatcher
 {
-    public function __construct(private readonly SourcePathResolver $paths) {}
+    public function __construct(
+        private readonly SourcePathResolver $paths,
+        private readonly ?YearRangeParser $years = null,
+    ) {}
 
-    /** @param array<string, mixed> $record @param list<array<string, mixed>> $filters */
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  list<array<string, mixed>>  $filters
+     * @param  array<string, array<string, mixed>>  $fields
+     */
     public function matches(array $record, array $filters, array $fields): bool
     {
         foreach ($filters as $filter) {
@@ -18,7 +25,7 @@ final class LiveReadRecordMatcher
                 return false;
             }
 
-            $actual = $record[(string) $filter['field']] ?? null;
+            $actual = $this->paths->get($record, (string) ($filter['field'] ?? ''));
             if (! $this->matchesOne($actual, (string) $filter['operator'], $filter['value'] ?? null, (string) $definition['type'])) {
                 return false;
             }
@@ -27,7 +34,10 @@ final class LiveReadRecordMatcher
         return true;
     }
 
-    /** @param array<string, mixed> $record @param array<string, array<string, mixed>> $fields */
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  array<string, array<string, mixed>>  $fields
+     */
     public function matchesSearchText(array $record, ?string $searchText, array $fields): bool
     {
         if ($searchText === null || trim($searchText) === '') {
@@ -50,12 +60,50 @@ final class LiveReadRecordMatcher
         return false;
     }
 
-    /** @param list<array<string, mixed>> $sorts */
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  list<array<string, mixed>>  $constraints
+     * @param  array<string, array<string, mixed>>  $fields
+     */
+    public function matchesConstraints(array $record, array $constraints, array $fields): bool
+    {
+        foreach ($constraints as $constraint) {
+            $type = Str::lower((string) ($constraint['type'] ?? ''));
+            $operator = (string) ($constraint['operator'] ?? 'eq');
+            $value = $constraint['value'] ?? null;
+
+            if ($type === 'year') {
+                if (! $this->matchesYear($record, $fields, $operator, $value)) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (! in_array($type, ['brand', 'category', 'product_type'], true)
+                || ! is_scalar($value)
+                || ! $this->matchesSearchText($record, (string) $value, $fields)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $records
+     * @param  list<array<string, mixed>>  $sorts
+     * @return list<array<string, mixed>>
+     */
     public function sort(array $records, array $sorts): array
     {
         usort($records, function (array $left, array $right) use ($sorts): int {
             foreach ($sorts as $sort) {
-                $comparison = $this->compare($left[$sort['field']] ?? null, $right[$sort['field']] ?? null, (string) $sort['type']);
+                $comparison = $this->compare(
+                    $this->paths->get($left, (string) ($sort['field'] ?? '')),
+                    $this->paths->get($right, (string) ($sort['field'] ?? '')),
+                    (string) ($sort['type'] ?? 'string'),
+                );
                 if ($comparison !== 0) {
                     return ($sort['direction'] ?? 'asc') === 'desc' ? -$comparison : $comparison;
                 }
@@ -127,5 +175,38 @@ final class LiveReadRecordMatcher
         }
 
         return mb_strtolower((string) $left) <=> mb_strtolower((string) $right);
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  array<string, array<string, mixed>>  $fields
+     */
+    private function matchesYear(array $record, array $fields, string $operator, mixed $value): bool
+    {
+        if (! is_int($value) && ! (is_string($value) && ctype_digit(trim($value)))) {
+            return false;
+        }
+
+        $requested = (int) $value;
+        if ($requested < 1900 || $requested > 2100) {
+            return false;
+        }
+
+        foreach (($this->years ?? new YearRangeParser)->ranges($record, $fields) as $range) {
+            $matches = match ($operator) {
+                'eq' => $requested >= $range['from'] && $requested <= $range['to'],
+                'gt' => $range['to'] > $requested,
+                'gte' => $range['to'] >= $requested,
+                'lt' => $range['from'] < $requested,
+                'lte' => $range['from'] <= $requested,
+                default => false,
+            };
+
+            if ($matches) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

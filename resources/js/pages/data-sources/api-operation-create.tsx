@@ -72,7 +72,15 @@ type ResponseField = {
 type FieldType = 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime';
 
 type LiveFilterMapping = { field: string; operator: string; remote: string };
-type LiveQueryMapping = { search_text: string; filters: LiveFilterMapping[] };
+type LiveConstraintMapping = {
+    type: string;
+    operator: string;
+    strategy: 'single_parameter' | 'range_parameters';
+    remote_parameter: string;
+    remote_from_parameter: string;
+    remote_to_parameter: string;
+};
+type LiveQueryMapping = { search_text: string; filters: LiveFilterMapping[]; constraints: LiveConstraintMapping[] };
 
 type InputMappingRow = {
     model_input: string;
@@ -137,7 +145,11 @@ export default function ApiOperationCreate({
             { ...emptyResponseField(), name: 'status', path: 'status', required: true },
         ] as ResponseField[],
         response_mapping: {},
-        live_query: operation?.live_query ?? { search_text: '', filters: [] },
+        live_query: {
+            search_text: operation?.live_query?.search_text ?? '',
+            filters: operation?.live_query?.filters ?? [],
+            constraints: operation?.live_query?.constraints ?? [],
+        },
         pagination: operation?.pagination ?? { type: 'none' },
         timeout_ms: operation?.timeout_ms ?? 10000,
         is_enabled: operation?.is_enabled ?? true,
@@ -759,6 +771,10 @@ export default function ApiOperationCreate({
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between"><div><p className="font-medium">Remote filter mappings</p><p className="text-sm text-muted-foreground">Map a safe field and operator to the API’s parameter.</p></div><Button type="button" variant="outline" size="sm" onClick={() => form.setData('live_query', { ...form.data.live_query, filters: [...form.data.live_query.filters, { field: '', operator: 'eq', remote: '' }] })}><Plus /> Add mapping</Button></div>
                                     {form.data.live_query.filters.map((filter, index) => <div key={`live-filter-${index}`} className="grid gap-3 rounded-lg border p-3 md:grid-cols-4"><Input value={filter.field} placeholder="Safe field key" onChange={(event) => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item) })} /><Select value={filter.operator} onValueChange={(value) => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.map((item, itemIndex) => itemIndex === index ? { ...item, operator: value } : item) })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['eq', 'neq', 'contains', 'gt', 'gte', 'lt', 'lte', 'between', 'in'].map((operator) => <SelectItem key={operator} value={operator}>{operator}</SelectItem>)}</SelectContent></Select><Input value={filter.remote} placeholder="Remote parameter" onChange={(event) => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.map((item, itemIndex) => itemIndex === index ? { ...item, remote: event.target.value } : item) })} /><Button type="button" variant="ghost" size="icon" onClick={() => form.setData('live_query', { ...form.data.live_query, filters: form.data.live_query.filters.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 /></Button></div>)}
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between"><div><p className="font-medium">Semantic constraint mappings</p><p className="text-sm text-muted-foreground">Map semantic constraints such as year to this client’s explicit parameter names.</p></div><Button type="button" variant="outline" size="sm" onClick={() => form.setData('live_query', { ...form.data.live_query, constraints: [...form.data.live_query.constraints, { type: '', operator: 'eq', strategy: 'single_parameter', remote_parameter: '', remote_from_parameter: '', remote_to_parameter: '' }] })}><Plus /> Add constraint</Button></div>
+                                    {form.data.live_query.constraints.map((constraint, index) => <div key={`live-constraint-${index}`} className="grid gap-3 rounded-lg border p-3 md:grid-cols-6"><Input value={constraint.type} placeholder="Semantic field (year)" onChange={(event) => form.setData('live_query', { ...form.data.live_query, constraints: form.data.live_query.constraints.map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value } : item) })} /><Select value={constraint.operator} onValueChange={(value) => form.setData('live_query', { ...form.data.live_query, constraints: form.data.live_query.constraints.map((item, itemIndex) => itemIndex === index ? { ...item, operator: value } : item) })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between'].map((operator) => <SelectItem key={operator} value={operator}>{operator}</SelectItem>)}</SelectContent></Select><Select value={constraint.strategy} onValueChange={(value) => form.setData('live_query', { ...form.data.live_query, constraints: form.data.live_query.constraints.map((item, itemIndex) => itemIndex === index ? { ...item, strategy: value as LiveConstraintMapping['strategy'] } : item) })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="single_parameter">Single parameter</SelectItem><SelectItem value="range_parameters">Range parameters</SelectItem></SelectContent></Select>{constraint.strategy === 'single_parameter' ? <Input value={constraint.remote_parameter} placeholder="Remote parameter (y)" onChange={(event) => form.setData('live_query', { ...form.data.live_query, constraints: form.data.live_query.constraints.map((item, itemIndex) => itemIndex === index ? { ...item, remote_parameter: event.target.value } : item) })} /> : <><Input value={constraint.remote_from_parameter} placeholder="From parameter" onChange={(event) => form.setData('live_query', { ...form.data.live_query, constraints: form.data.live_query.constraints.map((item, itemIndex) => itemIndex === index ? { ...item, remote_from_parameter: event.target.value } : item) })} /><Input value={constraint.remote_to_parameter} placeholder="To parameter" onChange={(event) => form.setData('live_query', { ...form.data.live_query, constraints: form.data.live_query.constraints.map((item, itemIndex) => itemIndex === index ? { ...item, remote_to_parameter: event.target.value } : item) })} /></>}<Button type="button" variant="ghost" size="icon" onClick={() => form.setData('live_query', { ...form.data.live_query, constraints: form.data.live_query.constraints.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 /></Button></div>)}
                                 </div>
                             </CardContent>
                         </Card>

@@ -3,11 +3,15 @@
 namespace App\Services\Ai;
 
 use App\Models\Bot;
+use App\Services\Api\LiveOperationCapabilityService;
 use Illuminate\Support\Str;
 
 class BotPromptBuilder
 {
-    public function __construct(private readonly AiRules $rules) {}
+    public function __construct(
+        private readonly AiRules $rules,
+        private readonly LiveOperationCapabilityService $liveOperations,
+    ) {}
 
     /**
      * @param  array{datasets: list<array{slug: string, name: string, entityType: string, fields: list<array<string, mixed>>}>}  $context
@@ -18,6 +22,10 @@ class BotPromptBuilder
             'You are the catalog assistant for '.$bot->name.'.',
             ...$this->rules->all(),
         ];
+
+        if ($this->liveOperations->has($bot, 'search_catalog')) {
+            $lines[] = 'Live catalog search is connected for this bot. Current product questions must be answered from a search_catalog call made for the current customer message.';
+        }
 
         if (is_string($bot->instructions) && trim($bot->instructions) !== '') {
             $lines[] = 'Bot instructions: '.Str::limit(Str::squish($bot->instructions), 2000);
