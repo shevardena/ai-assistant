@@ -158,16 +158,26 @@ class SearchCatalogTool implements BotTool
     {
         $rawArguments = $arguments;
         $canonicalSearchText = $this->searchText($arguments['text'] ?? null);
-        $relaxedSearchText = $this->relaxedSearchText($canonicalSearchText);
-        $originalSearchText = $this->originalTermExtractor->extract(
-            $context->userMessage?->content,
-        );
-        $searchCandidates = $this->searchCandidates($originalSearchText, $canonicalSearchText, $relaxedSearchText);
         $constraints = LiveReadQuery::normalizeConstraints($arguments['constraints'] ?? []);
+        $hasSearchText = $canonicalSearchText !== null;
+        $literalSearchText = $hasSearchText
+            ? ($this->originalTermExtractor->extractLiteral($context->userMessage?->content)
+                ?? $this->originalTermExtractor->extractLiteral($canonicalSearchText))
+            : null;
+        $relaxedSearchText = $hasSearchText ? $this->relaxedSearchText($canonicalSearchText) : null;
+        $originalSearchText = $hasSearchText
+            ? $this->originalTermExtractor->extract($context->userMessage?->content)
+            : null;
+        $searchCandidates = $this->searchCandidates($literalSearchText, $originalSearchText, $canonicalSearchText, $relaxedSearchText);
+        $searchMode = $literalSearchText !== null
+            ? 'literal'
+            : ($hasSearchText || $constraints !== [] ? 'semantic' : 'browse');
         $arguments = [...$arguments, 'constraints' => $constraints];
 
         $this->cycleLogger->event('search_catalog.intent.resolved', [
             'original_message' => Str::limit($context->userMessage === null ? '' : (string) $context->userMessage->content, 1000),
+            'search_mode' => $searchMode,
+            'literal_search_text' => $literalSearchText,
             'original_search_text' => $originalSearchText,
             'canonical_search_text' => $canonicalSearchText,
             'relaxed_search_text' => $relaxedSearchText,
@@ -188,6 +198,8 @@ class SearchCatalogTool implements BotTool
                 'limit' => $rawArguments['limit'] ?? null,
                 'result_count' => $rawArguments['result_count'] ?? null,
             ],
+            'search_mode' => $searchMode,
+            'literal_search_text' => $literalSearchText,
             'original_search_text' => $originalSearchText,
             'canonical_search_text' => $canonicalSearchText,
             'relaxed_search_text' => $relaxedSearchText,
@@ -260,7 +272,7 @@ class SearchCatalogTool implements BotTool
     /**
      * @param  array<string, mixed>  $arguments
      * @param  array<string, mixed>  $source
-     * @param  list<array{type: string, text: string|null}>  $searchCandidates
+     * @param  list<array{type: string, text: string|null, reason: string}>  $searchCandidates
      */
     private function executeDataset(
         Bot $bot,
@@ -283,18 +295,24 @@ class SearchCatalogTool implements BotTool
         /** @var array{dataset: string, count: int, items: list<array<string, mixed>>}|null $formatted */
         $formatted = null;
         $startedAt = hrtime(true);
-        $selectedCandidate = $searchCandidates[0] ?? ['type' => 'canonical', 'text' => null];
+        $selectedCandidate = $searchCandidates[0] ?? ['type' => 'browse', 'text' => null, 'reason' => 'browse_all_or_empty_search_text'];
         $semanticConstraints = array_values(array_filter((array) ($arguments['constraints'] ?? []), 'is_array'));
 
         foreach ($searchCandidates as $attemptIndex => $candidate) {
-            $attemptArguments = [...$arguments, 'dataset' => $dataset->slug, 'text' => $candidate['text']];
-            if ($semanticConstraints !== []) {
+            $attemptConstraints = $candidate['type'] === 'literal' ? [] : $semanticConstraints;
+            $attemptArguments = [
+                ...$arguments,
+                'dataset' => $dataset->slug,
+                'text' => $candidate['text'],
+                'constraints' => $attemptConstraints,
+            ];
+            if ($attemptConstraints !== []) {
                 $attemptArguments['candidate_limit'] = min(100, max(100, (int) ($arguments['limit'] ?? 10)));
             }
             ['query' => $query] = $this->queryFactory->make($bot, $attemptArguments);
             $startedAt = hrtime(true);
             $result = $this->searchService->search($context->team, $query);
-            if ($semanticConstraints !== []) {
+            if ($attemptConstraints !== []) {
                 $candidatesBefore = count($result->records);
                 $fields = $dataset->fields()->get()->mapWithKeys(fn ($field): array => [
                     $field->key => [
@@ -308,13 +326,13 @@ class SearchCatalogTool implements BotTool
                     $result->records,
                     fn ($record): bool => $this->recordMatcher->matchesConstraints(
                         $this->datasetRecordValues($record),
-                        $semanticConstraints,
+                        $attemptConstraints,
                         $fields,
                     ),
                 ));
                 $result = new SearchResult($records, count($records));
                 $this->cycleLogger->event('search_catalog.local_constraints.matched', [
-                    'constraints' => $semanticConstraints,
+                    'constraints' => $attemptConstraints,
                     'candidates_before' => $candidatesBefore,
                     'candidates_after' => count($records),
                 ]);
@@ -402,7 +420,7 @@ class SearchCatalogTool implements BotTool
     /**
      * @param  array<string, mixed>  $arguments
      * @param  list<array<string, mixed>>  $sources
-     * @param  list<array{type: string, text: string|null}>  $searchCandidates
+     * @param  list<array{type: string, text: string|null, reason: string}>  $searchCandidates
      */
     private function executeFederated(
         Bot $bot,
@@ -575,7 +593,7 @@ class SearchCatalogTool implements BotTool
     /**
      * @param  array<string, mixed>  $arguments
      * @param  array<string, mixed>  $source
-     * @param  list<array{type: string, text: string|null}>  $searchCandidates
+     * @param  list<array{type: string, text: string|null, reason: string}>  $searchCandidates
      */
     private function executeLive(Bot $bot, array $arguments, array $searchCandidates, array $source): ToolResult
     {
@@ -589,10 +607,14 @@ class SearchCatalogTool implements BotTool
         $mapping = is_array($mappingValue) ? $mappingValue : [];
         $liveMapping = is_array($mapping['live_query'] ?? null) ? $mapping['live_query'] : [];
         $attempts = [];
-        $selectedCandidate = $searchCandidates[0] ?? ['type' => 'canonical', 'text' => null];
+        $selectedCandidate = $searchCandidates[0] ?? ['type' => 'browse', 'text' => null, 'reason' => 'browse_all_or_empty_search_text'];
 
         foreach ($searchCandidates as $attemptIndex => $candidate) {
-            $attemptArguments = [...$arguments, 'text' => $candidate['text']];
+            $attemptArguments = [
+                ...$arguments,
+                'text' => $candidate['text'],
+                'constraints' => $candidate['type'] === 'literal' ? [] : ($arguments['constraints'] ?? []),
+            ];
             $query = LiveReadQuery::fromArguments($attemptArguments);
             $runtimeArguments = $this->liveArguments($operation->operation, $attemptArguments);
             $plan = $this->liveReadPlanner->plan($operation->operation, $query, $runtimeArguments);
@@ -765,19 +787,37 @@ class SearchCatalogTool implements BotTool
     }
 
     /**
-     * @return list<array{type: string, text: string|null}>
+     * @return list<array{type: string, text: string|null, reason: string}>
      */
-    private function searchCandidates(?string $originalSearchText, ?string $canonicalSearchText, ?string $relaxedSearchText): array
-    {
+    private function searchCandidates(
+        ?string $literalSearchText,
+        ?string $originalSearchText,
+        ?string $canonicalSearchText,
+        ?string $relaxedSearchText,
+    ): array {
         $candidates = [];
 
-        if ($originalSearchText !== null) {
-            $candidates[] = ['type' => 'original', 'text' => $originalSearchText];
+        if ($literalSearchText !== null) {
+            $candidates[] = [
+                'type' => 'literal',
+                'text' => $literalSearchText,
+                'reason' => 'title_like_or_identifier_query',
+            ];
+        } elseif ($originalSearchText !== null) {
+            $candidates[] = [
+                'type' => 'original',
+                'text' => $originalSearchText,
+                'reason' => 'customer_original_catalog_term',
+            ];
         }
 
         if ($canonicalSearchText !== null
-            && ! $this->equivalentSearchText($originalSearchText, $canonicalSearchText)) {
-            $candidates[] = ['type' => 'canonical_fallback', 'text' => $canonicalSearchText];
+            && ! $this->equivalentSearchText($literalSearchText ?? $originalSearchText, $canonicalSearchText)) {
+            $candidates[] = [
+                'type' => 'canonical_fallback',
+                'text' => $canonicalSearchText,
+                'reason' => 'canonical_model_or_catalog_term',
+            ];
         }
 
         $relaxedAlreadyPresent = false;
@@ -790,12 +830,16 @@ class SearchCatalogTool implements BotTool
         }
 
         if ($relaxedSearchText !== null && ! $relaxedAlreadyPresent) {
-            $candidates[] = ['type' => 'relaxed_core', 'text' => $relaxedSearchText];
+            $candidates[] = [
+                'type' => 'relaxed_core',
+                'text' => $relaxedSearchText,
+                'reason' => 'relaxed_core_entity',
+            ];
         }
 
         return $candidates !== []
             ? array_slice($candidates, 0, 3)
-            : [['type' => 'canonical', 'text' => null]];
+            : [['type' => 'browse', 'text' => null, 'reason' => 'browse_all_or_empty_search_text']];
     }
 
     private function relaxedSearchText(?string $canonicalSearchText): ?string
@@ -838,7 +882,7 @@ class SearchCatalogTool implements BotTool
 
     /**
      * @param  array<string, mixed>  $source
-     * @param  array{type: string, text: string|null}  $candidate
+     * @param  array{type: string, text: string|null, reason: string}  $candidate
      */
     private function logSearchAttempt(
         array $source,
@@ -855,6 +899,7 @@ class SearchCatalogTool implements BotTool
             'source_mode' => $source['mode'] ?? null,
             'attempt_number' => $attemptNumber,
             'attempt_type' => $candidate['type'],
+            'candidate_reason' => $candidate['reason'],
             'query_text' => $candidate['text'],
             'remote_parameter' => $remoteParameter,
             'result_count' => $resultCount,

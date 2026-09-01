@@ -306,6 +306,26 @@ test('keeps unmapped and remotely unsupported semantic constraints local', funct
         ->and($unknown->unsupportedConstraints)->toHaveCount(1);
 });
 
+test('keeps browse mode free of remote search parameters', function () {
+    $operation = liveOperation([
+        'collection' => ['path' => 'data', 'fields' => ['title' => ['path' => 'name', 'type' => 'string', 'searchable' => true]]],
+    ], [
+        'query' => [],
+        'fixed' => ['query' => ['per_page' => 50]],
+        'live_query' => ['search_text' => 'name'],
+    ]);
+
+    $plan = (new LiveReadQueryPlanner)->plan($operation, LiveReadQuery::fromArguments([
+        'text' => null,
+        'result_count' => ['mode' => 'all'],
+    ]));
+
+    expect($plan->remoteSearchParameter)->toBeNull()
+        ->and($plan->remoteSearchText)->toBeNull()
+        ->and($plan->remoteQuery)->toBe([])
+        ->and($plan->remoteArguments)->toBe([]);
+});
+
 test('matches conservative textual and structured automotive year ranges', function () {
     $parser = new YearRangeParser;
     $matcher = new LiveReadRecordMatcher(new SourcePathResolver, $parser);

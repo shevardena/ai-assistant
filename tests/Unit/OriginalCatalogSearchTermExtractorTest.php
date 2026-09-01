@@ -16,3 +16,12 @@ test('extracts the original meaningful catalog term from multilingual requests',
 test('does not turn a generic product request into a search term', function () {
     expect(app(OriginalCatalogSearchTermExtractor::class)->extract('მაჩვენე პროდუქტები'))->toBeNull();
 });
+
+test('preserves literal title structure while removing conversational suffixes', function () {
+    $extractor = app(OriginalCatalogSearchTermExtractor::class);
+
+    expect($extractor->extractLiteral('07-09 CAMRY - ბამპერი (წინა) გაქვს'))->toBe('07-09 CAMRY - ბამპერი (წინა)')
+        ->and($extractor->extractLiteral('09-11 PRIUS - ცხაური გაქვს?'))->toBe('09-11 PRIUS - ცხაური')
+        ->and($extractor->extractLiteral('ABC-123 გაქვთ?'))->toBe('ABC-123')
+        ->and($extractor->extractLiteral('show me products'))->toBeNull();
+});

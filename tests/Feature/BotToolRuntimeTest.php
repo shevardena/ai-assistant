@@ -188,12 +188,14 @@ test('live catalog search tries the original term before the canonical remote ma
     Http::fake([
         'https://api.example.test/*' => function ($request) use (&$queries) {
             parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
-            $searchText = (string) ($query['name'] ?? '');
+            $isBrowse = ! array_key_exists('name', $query);
+            $searchText = $isBrowse ? null : (string) $query['name'];
             $queries[] = $searchText;
-            $isCamry = strtolower($searchText) === 'camry';
-            $isPrius = strtolower($searchText) === 'prius';
+            $isCamry = strtolower((string) $searchText) === 'camry';
+            $isCamryTitle = $searchText === '07-09 CAMRY - ბამპერი (წინა)';
+            $isPrius = strtolower((string) $searchText) === 'prius';
 
-            if (! $isCamry && ! $isPrius) {
+            if (! $isBrowse && ! $isCamry && ! $isCamryTitle && ! $isPrius) {
                 return Http::response(['data' => []]);
             }
 
@@ -277,10 +279,52 @@ test('live catalog search tries the original term before the canonical remote ma
         ),
     );
 
+    $literalResult = $tool->execute(
+        $bot,
+        [
+            'dataset' => null,
+            'text' => 'Camry front bumper',
+            'filters' => [],
+            'constraints' => [['type' => 'year', 'operator' => 'eq', 'value' => 2009]],
+            'sorts' => [],
+            'limit' => 10,
+            'result_count' => null,
+        ],
+        ToolExecutionContext::forBot(
+            $bot,
+            userMessage: new Message(['content' => '07-09 CAMRY - ბამპერი (წინა) გაქვს']),
+            mode: RuntimeMode::Test,
+        ),
+    );
+
+    $browseResult = $tool->execute(
+        $bot,
+        [
+            'dataset' => null,
+            'text' => null,
+            'filters' => [],
+            'sorts' => [],
+            'limit' => 10,
+            'result_count' => ['mode' => 'all', 'value' => null, 'minimum' => null, 'maximum' => null],
+        ],
+        ToolExecutionContext::forBot(
+            $bot,
+            userMessage: new Message(['content' => 'რა პროდუქცია გაქვს?']),
+            mode: RuntimeMode::Test,
+        ),
+    );
+
     Http::assertSent(fn ($request): bool => str_contains($request->url(), 'name=camry'));
     Http::assertSent(fn ($request): bool => str_contains($request->url(), 'name=prius'));
     Http::assertSent(fn ($request): bool => str_contains($request->url(), 'per_page=300'));
     Http::assertSent(fn ($request): bool => str_contains($request->url(), 'y=2009'));
+    Http::assertSent(function ($request): bool {
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return ($query['name'] ?? null) === '07-09 CAMRY - ბამპერი (წინა)'
+            && ! array_key_exists('y', $query);
+    });
+    Http::assertSent(fn ($request): bool => ! str_contains($request->url(), 'name=') && str_contains($request->url(), 'per_page=300'));
 
     expect($camryResult->data['search']['count'])->toBe(1)
         ->and($camryResult->data['search']['items'][0]['title'])->toBe('07-09 CAMRY - ბამპერი (წინა)')
@@ -294,7 +338,7 @@ test('live catalog search tries the original term before the canonical remote ma
         ])
         ->and($priusResult->data['search']['count'])->toBe(1)
         ->and($priusResult->data['search']['items'][0]['title'])->toBe('TOYOTA PRIUS - ფარი')
-        ->and($queries)->toBe(['ქემრი', 'camry', 'პრისუ', 'prius', 'prius', 'toyota prius', 'Prius'])
+        ->and($queries)->toBe(['ქემრი', 'camry', 'პრისუ', 'prius', 'Prius', 'Toyota Prius', 'Prius', '07-09 CAMRY - ბამპერი (წინა)', null])
         ->and($camryResult->metadata['attempts'])->toMatchArray([
             ['type' => 'original', 'text' => 'ქემრი', 'count' => 0, 'confirmed_empty' => true, 'fallback_triggered' => true],
             ['type' => 'canonical_fallback', 'text' => 'camry', 'count' => 1, 'confirmed_empty' => false, 'fallback_triggered' => false],
@@ -303,7 +347,16 @@ test('live catalog search tries the original term before the canonical remote ma
         ->and($yearResult->data['search']['count'])->toBe(1)
         ->and($yearResult->metadata['live_read']['remote_constraints'][0]['parameters'])->toBe(['y' => 2009])
         ->and($relaxedResult->data['search']['count'])->toBe(1)
-        ->and($relaxedResult->metadata['selected_query'])->toBe('Prius');
+        ->and($relaxedResult->metadata['selected_query'])->toBe('Prius')
+        ->and($literalResult->data['search']['count'])->toBe(1)
+        ->and($literalResult->metadata['selected_query'])->toBe('07-09 CAMRY - ბამპერი (წინა)')
+        ->and($literalResult->metadata['attempts'][0])->toMatchArray([
+            'type' => 'literal',
+            'text' => '07-09 CAMRY - ბამპერი (წინა)',
+            'count' => 1,
+        ])
+        ->and($browseResult->data['search']['count'])->toBe(1)
+        ->and($browseResult->metadata['selected_query'])->toBeNull();
 });
 
 test('search_catalog federates eligible product datasets and live API sources', function () {

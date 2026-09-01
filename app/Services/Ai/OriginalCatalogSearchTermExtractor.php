@@ -40,6 +40,29 @@ final class OriginalCatalogSearchTermExtractor
         return $term !== '' ? $term : null;
     }
 
+    public function extractLiteral(?string $message): ?string
+    {
+        if (! is_string($message) || trim($message) === '') {
+            return null;
+        }
+
+        $candidate = trim($message);
+        $candidate = preg_replace('/^(?:(?:show\s+me|do\s+you\s+have|have\s+you\s+got|can\s+you\s+show\s+me|please|მაჩვენე|მაჩვენეთ|მაჩვენოთ)\s+)+/iu', '', $candidate) ?? $candidate;
+        $candidate = preg_replace('/\s+(?:(?:do\s+you\s+have|have\s+you\s+got)|(?:გაქვს|გაქვთ|არის|არსებობს))\s*[?!.,…]*$/iu', '', $candidate) ?? $candidate;
+        $candidate = trim($candidate, " \t\n\r\0\x0B?!.,…");
+
+        if ($candidate === '' || ! $this->looksLikeLiteral($candidate)) {
+            return null;
+        }
+
+        return preg_replace('/\s+/u', ' ', $candidate) ?: $candidate;
+    }
+
+    private function looksLikeLiteral(string $value): bool
+    {
+        return preg_match('/(?:\b\d{2,4}[-\/]\d{2,4}\b|\b[A-Za-z0-9]+[-_][A-Za-z0-9_-]+\b|[()])/u', $value) === 1;
+    }
+
     private function isStopWord(string $token): bool
     {
         if (in_array($token, self::STOP_WORDS, true)) {
